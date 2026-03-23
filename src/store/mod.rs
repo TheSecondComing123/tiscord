@@ -11,6 +11,14 @@ use twilight_model::channel::ChannelType;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 use twilight_model::id::Id;
 
+#[derive(Debug, Clone)]
+pub struct ThreadInfo {
+    pub id: Id<ChannelMarker>,
+    pub name: String,
+    pub parent_channel: Id<ChannelMarker>,
+    pub message_count: u32,
+}
+
 use crate::discord::events::DiscordEvent;
 
 #[derive(Debug, Clone)]
@@ -55,6 +63,8 @@ pub struct Store {
     pub search: search::SearchState,
     /// Cache of pinned messages per channel. None means cache is invalid/not yet loaded.
     pub pinned_messages: HashMap<Id<ChannelMarker>, Option<Vec<messages::StoredMessage>>>,
+    /// Active threads indexed by parent channel ID.
+    pub active_threads: HashMap<Id<ChannelMarker>, Vec<ThreadInfo>>,
 }
 
 impl Store {
@@ -72,6 +82,7 @@ impl Store {
             voice: voice::VoiceState::default(),
             search: search::SearchState::default(),
             pinned_messages: HashMap::new(),
+            active_threads: HashMap::new(),
         }
     }
 
@@ -425,6 +436,25 @@ impl Store {
             DiscordEvent::SearchResults { results } => {
                 self.search.results = results;
                 self.search.loading = false;
+            }
+            DiscordEvent::ThreadCreate { thread_info } => {
+                self.active_threads
+                    .entry(thread_info.parent_channel)
+                    .or_default()
+                    .push(thread_info);
+            }
+            DiscordEvent::ThreadDelete { thread_id, parent_channel } => {
+                if let Some(threads) = self.active_threads.get_mut(&parent_channel) {
+                    threads.retain(|t| t.id != thread_id);
+                }
+            }
+            DiscordEvent::ThreadListSync { guild_id: _, threads } => {
+                for thread in threads {
+                    self.active_threads
+                        .entry(thread.parent_channel)
+                        .or_default()
+                        .push(thread);
+                }
             }
             DiscordEvent::VoiceStateUpdate { channel_id, user_id, display_name, self_mute, self_deaf } => {
                 let name = if display_name.is_empty() {

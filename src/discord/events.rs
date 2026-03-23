@@ -94,6 +94,17 @@ pub enum DiscordEvent {
     SearchResults {
         results: Vec<crate::store::search::SearchResult>,
     },
+    ThreadCreate {
+        thread_info: crate::store::ThreadInfo,
+    },
+    ThreadDelete {
+        thread_id: twilight_model::id::Id<ChannelMarker>,
+        parent_channel: twilight_model::id::Id<ChannelMarker>,
+    },
+    ThreadListSync {
+        guild_id: twilight_model::id::Id<GuildMarker>,
+        threads: Vec<crate::store::ThreadInfo>,
+    },
 }
 
 use twilight_gateway::Event;
@@ -194,6 +205,43 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
         Event::ChannelPinsUpdate(cpu) => Some(DiscordEvent::ChannelPinsUpdate {
             channel_id: cpu.channel_id,
         }),
+        Event::ThreadCreate(tc) => {
+            // A thread is a Channel with a parent_id pointing at the parent channel.
+            if let Some(parent_channel) = tc.0.parent_id {
+                Some(DiscordEvent::ThreadCreate {
+                    thread_info: crate::store::ThreadInfo {
+                        id: tc.0.id,
+                        name: tc.0.name.clone().unwrap_or_default(),
+                        parent_channel,
+                        message_count: tc.0.message_count.unwrap_or(0),
+                    },
+                })
+            } else {
+                None
+            }
+        }
+        Event::ThreadDelete(td) => Some(DiscordEvent::ThreadDelete {
+            thread_id: td.id,
+            parent_channel: td.parent_id,
+        }),
+        Event::ThreadListSync(tls) => {
+            let threads: Vec<crate::store::ThreadInfo> = tls
+                .threads
+                .iter()
+                .filter_map(|ch| {
+                    ch.parent_id.map(|parent_channel| crate::store::ThreadInfo {
+                        id: ch.id,
+                        name: ch.name.clone().unwrap_or_default(),
+                        parent_channel,
+                        message_count: ch.message_count.unwrap_or(0),
+                    })
+                })
+                .collect();
+            Some(DiscordEvent::ThreadListSync {
+                guild_id: tls.guild_id,
+                threads,
+            })
+        }
         _ => None,
     }
 }

@@ -9,9 +9,9 @@ use ratatui::widgets::Paragraph;
 use crate::discord::actions::Action;
 use crate::store::Store;
 use crate::store::messages::StoredMessage;
-use crate::store::state::FocusTarget;
+use crate::store::state::{FocusTarget, PaneView};
 use crate::tui::component::Component;
-use crate::tui::components::message::render_message;
+use crate::tui::components::message::render_message_with_thread;
 use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
 
@@ -172,8 +172,41 @@ impl Component for MessageList {
                 store.ui.focus = FocusTarget::MessageInput;
             }
             (KeyCode::Esc | KeyCode::Left, KeyModifiers::NONE) => {
-                // Back to channel tree
-                store.ui.focus = FocusTarget::ChannelTree;
+                // If we're in a nested pane (e.g. thread), pop back; otherwise go to channel tree.
+                if !store.ui.pop_pane() {
+                    store.ui.focus = FocusTarget::ChannelTree;
+                }
+            }
+            // t - open thread for the selected message (if the message has a thread)
+            (KeyCode::Char('t'), KeyModifiers::NONE) => {
+                if let Some(msg) = self.get_selected_message(store) {
+                    let msg_id = msg.id;
+                    // Look for a thread whose first message is this one (Discord threads are
+                    // channels whose id matches the starter message id), or find by channel.
+                    if let Some(channel_id) = store.ui.active_channel() {
+                        // Find a thread associated with this channel where the thread id
+                        // matches the message id (Discord's thread-from-message convention)
+                        // or any thread in this channel.
+                        let thread_match = store
+                            .active_threads
+                            .get(&channel_id)
+                            .and_then(|threads| {
+                                // Prefer thread whose id == message id (starter message)
+                                threads.iter().find(|t| t.id.get() == msg_id.get())
+                                    .or_else(|| threads.first())
+                            })
+                            .map(|t| (t.parent_channel, t.id));
+
+                        if let Some((parent_channel, thread_id)) = thread_match {
+                            store.ui.push_pane(PaneView::Thread { parent_channel, thread_id });
+                            return Ok(Some(Action::FetchMessages {
+                                channel_id: thread_id,
+                                before: None,
+                                limit: 50,
+                            }));
+                        }
+                    }
+                }
             }
 
             // Message actions (return ComponentKeyAction for App to handle)
@@ -292,7 +325,14 @@ impl Component for MessageList {
         let mut line_owners: Vec<usize> = Vec::new();
 
         for (msg_idx, msg) in messages.iter().enumerate() {
-            let rendered = render_message(msg, msg_area.width);
+            // Look up a thread whose id matches the message id (Discord starter message convention)
+            let thread_info = store
+                .ui
+                .active_channel()
+                .and_then(|cid| store.active_threads.get(&cid))
+                .and_then(|threads| threads.iter().find(|t| t.id.get() == msg.id.get()));
+
+            let rendered = render_message_with_thread(msg, msg_area.width, thread_info);
             let line_count = rendered.len();
             all_lines.extend(rendered);
             for _ in 0..line_count {
