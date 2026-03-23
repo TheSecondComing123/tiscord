@@ -2,6 +2,7 @@ pub mod guilds;
 pub mod messages;
 pub mod notifications;
 pub mod state;
+pub mod typing;
 
 use std::collections::HashMap;
 use twilight_model::channel::ChannelType;
@@ -40,6 +41,7 @@ pub struct Store {
     pub current_user_id: Option<Id<UserMarker>>,
     pub current_user_name: Option<String>,
     pub dm_channels: Vec<DmChannel>,
+    pub typing: typing::TypingState,
 }
 
 impl Store {
@@ -53,6 +55,7 @@ impl Store {
             current_user_id: None,
             current_user_name: None,
             dm_channels: Vec::new(),
+            typing: typing::TypingState::default(),
         }
     }
 
@@ -305,7 +308,29 @@ impl Store {
                 self.ui.connection_status = state::ConnectionStatus::Reconnecting;
                 tracing::info!("gateway reconnecting");
             }
-            DiscordEvent::TypingStart { .. } => {}
+            DiscordEvent::TypingStart {
+                channel_id,
+                user_id,
+                display_name,
+            } => {
+                // Skip our own typing events
+                if Some(user_id) == self.current_user_id {
+                    return;
+                }
+                // Resolve display_name from member cache if not already set
+                let name = if display_name.is_empty() {
+                    // Try to find the member's display name across all guilds
+                    self.members
+                        .values()
+                        .flat_map(|members| members.iter())
+                        .find(|m| m.id == user_id)
+                        .map(|m| m.name.clone())
+                        .unwrap_or_else(|| format!("user:{}", user_id))
+                } else {
+                    display_name
+                };
+                self.typing.add_typing(channel_id, user_id, name);
+            }
             DiscordEvent::PresenceUpdate => {}
         }
     }

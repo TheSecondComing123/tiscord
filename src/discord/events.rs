@@ -25,6 +25,7 @@ pub enum DiscordEvent {
     TypingStart {
         channel_id: Id<ChannelMarker>,
         user_id: Id<UserMarker>,
+        display_name: String,
     },
     PresenceUpdate,
     MemberChunk {
@@ -83,6 +84,11 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
         Event::MemberChunk(mc) => Some(DiscordEvent::MemberChunk {
             guild_id: mc.guild_id,
             members: mc.members.clone(),
+        }),
+        Event::TypingStart(ts) => Some(DiscordEvent::TypingStart {
+            channel_id: ts.channel_id,
+            user_id: ts.user_id,
+            display_name: String::new(), // resolved in store from member cache
         }),
         _ => None,
     }

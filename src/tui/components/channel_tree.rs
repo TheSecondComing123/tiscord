@@ -143,6 +143,7 @@ impl Component for ChannelTree {
                     let has_mention = store.notifications.has_mentions(ch.id);
 
                     let name = format!("# {}", ch.name);
+                    let has_typers = store.typing.has_typers(ch.id);
 
                     let base_style = if is_selected {
                         theme::selected()
@@ -157,6 +158,13 @@ impl Component for ChannelTree {
                     };
 
                     let mut spans = vec![Span::styled(name, name_style)];
+
+                    if has_typers {
+                        spans.push(Span::styled(
+                            " \u{22ef}",
+                            theme::muted().add_modifier(Modifier::DIM),
+                        ));
+                    }
 
                     if has_mention {
                         let count = store

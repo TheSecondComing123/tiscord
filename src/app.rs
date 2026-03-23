@@ -329,12 +329,54 @@ fn render_status_bar(
         status_bg.fg(conn_color),
     );
 
-    // Center section: error message (if active) or guild > channel
+    // Center section: error message (if active) or typing indicator or guild > channel
     let center_span = if let Some((msg, _)) = error_message {
         Span::styled(
             msg.clone(),
             status_bg.fg(theme::DND),
         )
+    } else if let Some(channel_id) = store.ui.selected_channel {
+        let typers = store.typing.get_typers(channel_id);
+        if !typers.is_empty() {
+            let typing_text = match typers.len() {
+                1 => format!("{} is typing...", typers[0].display_name),
+                2 => format!("{}, {} are typing...", typers[0].display_name, typers[1].display_name),
+                _ => "several people are typing...".to_string(),
+            };
+            Span::styled(typing_text, status_bg.fg(theme::TEXT_MUTED).add_modifier(Modifier::DIM))
+        } else {
+            let center_text = {
+                let guild_name = store
+                    .ui
+                    .selected_guild
+                    .and_then(|gid| store.guilds.get_guild(gid))
+                    .map(|g| g.name.as_str())
+                    .unwrap_or("");
+                let channel_name = store
+                    .ui
+                    .selected_channel
+                    .and_then(|cid| {
+                        store.ui.selected_guild.and_then(|gid| {
+                            store
+                                .guilds
+                                .get_guild(gid)
+                                .and_then(|g| g.channels.iter().find(|c| c.id == cid))
+                                .map(|c| c.name.as_str())
+                        })
+                    })
+                    .unwrap_or("");
+                if guild_name.is_empty() && channel_name.is_empty() {
+                    String::new()
+                } else if guild_name.is_empty() {
+                    format!("#{channel_name}")
+                } else if channel_name.is_empty() {
+                    guild_name.to_string()
+                } else {
+                    format!("{guild_name} > #{channel_name}")
+                }
+            };
+            Span::styled(center_text, status_bg.fg(theme::TEXT_SECONDARY))
+        }
     } else {
         let center_text = {
             let guild_name = store
@@ -343,27 +385,10 @@ fn render_status_bar(
                 .and_then(|gid| store.guilds.get_guild(gid))
                 .map(|g| g.name.as_str())
                 .unwrap_or("");
-            let channel_name = store
-                .ui
-                .selected_channel
-                .and_then(|cid| {
-                    store.ui.selected_guild.and_then(|gid| {
-                        store
-                            .guilds
-                            .get_guild(gid)
-                            .and_then(|g| g.channels.iter().find(|c| c.id == cid))
-                            .map(|c| c.name.as_str())
-                    })
-                })
-                .unwrap_or("");
-            if guild_name.is_empty() && channel_name.is_empty() {
+            if guild_name.is_empty() {
                 String::new()
-            } else if guild_name.is_empty() {
-                format!("#{channel_name}")
-            } else if channel_name.is_empty() {
-                guild_name.to_string()
             } else {
-                format!("{guild_name} > #{channel_name}")
+                guild_name.to_string()
             }
         };
         Span::styled(center_text, status_bg.fg(theme::TEXT_SECONDARY))
