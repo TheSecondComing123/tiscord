@@ -145,11 +145,11 @@ impl App {
 
             // Poll terminal events
             if event::poll(tick_rate)? {
-                if let Event::Key(key) = event::read()? {
-                    // Only handle key press events, not release/repeat
-                    if key.kind == crossterm::event::KeyEventKind::Press {
+                match event::read()? {
+                    Event::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
                         self.handle_key(key)?;
                     }
+                    _ => {}
                 }
             }
 
