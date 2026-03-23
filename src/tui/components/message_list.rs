@@ -40,7 +40,7 @@ impl MessageList {
     }
 
     pub fn get_selected_message<'a>(&self, store: &'a Store) -> Option<&'a StoredMessage> {
-        let channel_id = store.ui.selected_channel?;
+        let channel_id = store.ui.active_channel()?;
         let buffer = store.messages.get(&channel_id)?;
         let index = self.selected_index.get()?;
         buffer.messages().get(index)
@@ -61,7 +61,7 @@ impl Component for MessageList {
             return Ok(None);
         }
 
-        let channel_id = match store.ui.selected_channel {
+        let channel_id = match store.ui.active_channel() {
             Some(id) => id,
             None => return Ok(None),
         };
@@ -193,7 +193,7 @@ impl Component for MessageList {
             (KeyCode::Char('P'), _) => {
                 if let Some(msg) = self.get_selected_message(store) {
                     let message_id = msg.id;
-                    if let Some(channel_id) = store.ui.selected_channel {
+                    if let Some(channel_id) = store.ui.active_channel() {
                         // Check if already pinned
                         let is_pinned = store
                             .pinned_messages
@@ -218,7 +218,7 @@ impl Component for MessageList {
     }
 
     fn render(&self, frame: &mut Frame, area: Rect, store: &Store) {
-        let channel_id = match store.ui.selected_channel {
+        let channel_id = match store.ui.active_channel() {
             Some(id) => id,
             None => {
                 let placeholder = Paragraph::new("No channel selected")
