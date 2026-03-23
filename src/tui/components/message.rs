@@ -1,7 +1,7 @@
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::store::messages::StoredMessage;
+use crate::store::messages::{ReactionEmoji, StoredMessage};
 use crate::tui::theme;
 use crate::utils::time::format_timestamp;
 
@@ -57,6 +57,26 @@ pub fn render_message(msg: &StoredMessage, _width: u16) -> Vec<Line<'static>> {
         let size_str = format_size(attachment.size);
         let text = format!("[file: {} ({})]", attachment.filename, size_str);
         lines.push(Line::from(Span::styled(text, theme::secondary_text())));
+    }
+
+    // ── reactions ────────────────────────────────────────────────────────────
+    if !msg.reactions.is_empty() {
+        let reaction_spans: Vec<Span> = msg.reactions.iter().flat_map(|r| {
+            let emoji_str = match &r.emoji {
+                ReactionEmoji::Unicode(e) => e.clone(),
+                ReactionEmoji::Custom { name, .. } => format!(":{}:", name),
+            };
+            let style = if r.me {
+                Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::TEXT_MUTED)
+            };
+            vec![
+                Span::styled(format!("[{} {}]", emoji_str, r.count), style),
+                Span::raw(" "),
+            ]
+        }).collect();
+        lines.push(Line::from(reaction_spans));
     }
 
     lines
