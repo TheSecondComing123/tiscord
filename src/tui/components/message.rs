@@ -96,6 +96,7 @@ mod tests {
             reply_to: None,
             attachments: vec![],
             is_edited: false,
+            reactions: vec![],
         }
     }
 

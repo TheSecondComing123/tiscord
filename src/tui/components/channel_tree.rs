@@ -123,8 +123,12 @@ impl Component for ChannelTree {
                     if is_selected {
                         selected_list_row = Some(items.len());
                     }
-                    let prefix = "v ";
-                    let name = format!("{}{}", prefix, ch.name);
+                    let user_count = store.voice.user_count(ch.id);
+                    let name = if user_count > 0 {
+                        format!("\u{1f50a} {} ({})", ch.name, user_count)
+                    } else {
+                        format!("\u{1f50a} {}", ch.name)
+                    };
                     let style = if is_selected {
                         theme::selected()
                     } else {
@@ -132,6 +136,22 @@ impl Component for ChannelTree {
                     };
                     items.push(ListItem::new(Line::from(Span::styled(name, style))));
                     selectable_idx += 1;
+
+                    // When selected, show connected users indented below
+                    if is_selected && user_count > 0 {
+                        for voice_user in store.voice.get_users(ch.id) {
+                            let mute_indicator = if voice_user.self_mute || voice_user.self_deaf {
+                                "\u{1f507} "
+                            } else {
+                                "   "
+                            };
+                            let label = format!("  {}{}", mute_indicator, voice_user.display_name);
+                            items.push(ListItem::new(Line::from(Span::styled(
+                                label,
+                                theme::muted(),
+                            ))));
+                        }
+                    }
                 }
                 // Text, Announcement, Forum treated as text channels
                 _ => {
