@@ -50,9 +50,13 @@ async fn main() -> anyhow::Result<()> {
     // Spawn gateway
     tokio::spawn(discord::client::run_gateway(token, discord_event_tx));
 
+    // Detect terminal graphics capabilities
+    let terminal_caps = tui::terminal_caps::TerminalCapabilities::detect();
+    tracing::info!("Terminal graphics: {:?}", terminal_caps.graphics);
+
     // Create store and app
     let store = std::sync::Arc::new(std::sync::RwLock::new(store::Store::new()));
-    let mut app = app::App::new(store, action_tx, discord_event_rx, config);
+    let mut app = app::App::new(store, action_tx, discord_event_rx, config, terminal_caps);
 
     // Init terminal and run
     let mut terminal = tui::terminal::init()?;

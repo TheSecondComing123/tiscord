@@ -19,6 +19,7 @@ pub enum FocusTarget {
     CommandPalette,
     EmojiPicker,
     SearchOverlay,
+    ProfileOverlay,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

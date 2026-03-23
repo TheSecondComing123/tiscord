@@ -19,10 +19,12 @@ use crate::tui::components::message_pane::MessagePane;
 use crate::tui::components::overlays::command_palette::CommandPalette;
 use crate::tui::components::overlays::emoji_picker::EmojiPicker;
 use crate::tui::components::overlays::pins::PinsOverlay;
+use crate::tui::components::overlays::profile::ProfileOverlay;
 use crate::tui::components::overlays::search::SearchOverlay;
 use crate::tui::components::sidebar::ServerChannelSidebar;
 use crate::tui::keybindings::KeyAction;
 use crate::tui::terminal::Tui;
+use crate::tui::terminal_caps::TerminalCapabilities;
 use crate::tui::theme;
 
 pub struct App {
@@ -30,6 +32,7 @@ pub struct App {
     action_tx: mpsc::UnboundedSender<Action>,
     discord_event_rx: mpsc::UnboundedReceiver<DiscordEvent>,
     config: Config,
+    pub terminal_caps: TerminalCapabilities,
     should_quit: bool,
     sidebar: ServerChannelSidebar,
     message_pane: MessagePane,
@@ -38,6 +41,7 @@ pub struct App {
     emoji_picker: EmojiPicker,
     search_overlay: SearchOverlay,
     pins_overlay: PinsOverlay,
+    profile_overlay: ProfileOverlay,
     error_message: Option<(String, Instant)>,
 }
 
@@ -47,6 +51,7 @@ impl App {
         action_tx: mpsc::UnboundedSender<Action>,
         discord_event_rx: mpsc::UnboundedReceiver<DiscordEvent>,
         config: Config,
+        terminal_caps: TerminalCapabilities,
     ) -> Self {
         let recent_emojis = config.reactions.recent.clone();
         Self {
@@ -54,6 +59,7 @@ impl App {
             action_tx,
             discord_event_rx,
             config,
+            terminal_caps,
             should_quit: false,
             sidebar: ServerChannelSidebar::new(),
             message_pane: MessagePane::new(),
@@ -62,6 +68,7 @@ impl App {
             emoji_picker: EmojiPicker::new(recent_emojis),
             search_overlay: SearchOverlay::new(),
             pins_overlay: PinsOverlay::new(),
+            profile_overlay: ProfileOverlay::new(),
             error_message: None,
         }
     }
@@ -97,6 +104,7 @@ impl App {
                 let emoji_picker_ref = &self.emoji_picker;
                 let pins_overlay_ref = &self.pins_overlay;
                 let search_overlay_ref = &self.search_overlay;
+                let profile_overlay_ref = &self.profile_overlay;
                 let error_ref = &self.error_message;
 
                 terminal.draw(|frame| {
@@ -167,6 +175,11 @@ impl App {
                     if search_overlay_ref.is_visible() {
                         search_overlay_ref.render(frame, area, &store);
                     }
+
+                    // Overlay: profile
+                    if profile_overlay_ref.is_visible() {
+                        profile_overlay_ref.render(frame, area, &store);
+                    }
                 })?;
             }
 
@@ -231,6 +244,20 @@ impl App {
             let result = self.search_overlay.handle_key_event(key, &mut store)?;
             if let Some(action) = result {
                 let _ = self.action_tx.send(action);
+            }
+            return Ok(());
+        }
+
+        // When the profile overlay is visible, route all keys to it.
+        if focus == FocusTarget::ProfileOverlay {
+            let mut store = self.store.write().unwrap();
+            let result = self.profile_overlay.handle_key_event(key, &mut store)?;
+            if let Some(action) = result {
+                let _ = self.action_tx.send(action);
+            }
+            // If the overlay closed itself, restore focus to the previous pane.
+            if !self.profile_overlay.is_visible() {
+                store.ui.focus = FocusTarget::MessageList;
             }
             return Ok(());
         }
@@ -328,7 +355,7 @@ impl App {
             FocusTarget::MemberSidebar => {
                 self.member_sidebar.handle_key_event(key, &mut store)?
             }
-            FocusTarget::CommandPalette | FocusTarget::EmojiPicker | FocusTarget::SearchOverlay => {
+            FocusTarget::CommandPalette | FocusTarget::EmojiPicker | FocusTarget::SearchOverlay | FocusTarget::ProfileOverlay => {
                 // Already handled above, but satisfy the match
                 None
             }
@@ -398,6 +425,14 @@ impl App {
                             if let Some((channel_id, message_id)) = msg_data {
                                 self.emoji_picker.open(channel_id, message_id);
                                 store.ui.focus = FocusTarget::EmojiPicker;
+                            }
+                        }
+                        KeyAction::OpenProfileOverlay { user_id } => {
+                            let needs_fetch = store.profiles.needs_fetch(user_id);
+                            self.profile_overlay.open(user_id);
+                            store.ui.focus = FocusTarget::ProfileOverlay;
+                            if needs_fetch {
+                                let _ = self.action_tx.send(Action::FetchUserProfile { user_id });
                             }
                         }
                     }
@@ -519,6 +554,7 @@ fn render_status_bar(
         FocusTarget::CommandPalette => ("PALETTE", theme::ACCENT),
         FocusTarget::EmojiPicker => ("EMOJI", theme::ACCENT),
         FocusTarget::SearchOverlay => ("SEARCH", theme::ACCENT),
+        FocusTarget::ProfileOverlay => ("PROFILE", theme::ACCENT),
     };
     let right_span = Span::styled(
         format!(" {focus_text} "),

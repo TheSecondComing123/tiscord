@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 use twilight_http::Client as HttpClient;
 use twilight_http::request::channel::reaction::RequestReactionType;
-use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
+use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 use twilight_model::id::Id;
 
 use super::events::DiscordEvent;
@@ -73,6 +73,17 @@ pub enum Action {
     OpenThread {
         parent_channel: Id<ChannelMarker>,
         thread_id: Id<ChannelMarker>,
+    },
+    /// Fetch a user profile from the REST API and emit UserProfileLoaded.
+    FetchUserProfile {
+        user_id: Id<UserMarker>,
+    },
+    /// Fetch an image attachment and emit ImageLoaded once encoded.
+    /// TODO: actual HTTP fetch + encoding requires the 'image' and 'base64' crates.
+    FetchImage {
+        url: String,
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
     },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
@@ -313,6 +324,29 @@ pub async fn run_action_handler(
                 if let Err(e) = http.delete_pin(channel_id, message_id).await {
                     tracing::error!("failed to unpin message: {e}");
                 }
+            }
+            Action::FetchUserProfile { user_id } => {
+                match http.user(user_id).await {
+                    Ok(response) => match response.model().await {
+                        Ok(user) => {
+                            let profile = crate::store::profiles::UserProfile {
+                                user_id: user.id,
+                                username: user.name.clone(),
+                                display_name: user.global_name.clone(),
+                                bot: user.bot,
+                            };
+                            let _ = event_tx.send(DiscordEvent::UserProfileLoaded { profile });
+                        }
+                        Err(e) => tracing::error!("failed to deserialize user profile: {e}"),
+                    },
+                    Err(e) => tracing::error!("failed to fetch user profile: {e}"),
+                }
+            }
+            Action::FetchImage { url, channel_id: _, message_id: _ } => {
+                // TODO: Fetch the image bytes via HTTP, encode using the terminal graphics
+                // protocol (Kitty or Sixel), and emit ImageLoaded. Requires the 'image'
+                // and 'base64' crates which are not yet added to Cargo.toml.
+                tracing::debug!("FetchImage stub called for url={url}");
             }
         }
     }

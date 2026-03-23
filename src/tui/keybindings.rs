@@ -8,4 +8,8 @@ pub enum KeyAction {
     EditMessage,
     DeleteMessage,
     OpenEmojiPicker,
+    /// Open the profile overlay for the given user.
+    OpenProfileOverlay {
+        user_id: twilight_model::id::Id<twilight_model::id::marker::UserMarker>,
+    },
 }

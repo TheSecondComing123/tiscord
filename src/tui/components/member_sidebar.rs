@@ -7,15 +7,20 @@ use crate::discord::actions::Action;
 use crate::store::{MemberStatus, Store};
 use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
+use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
 
 pub struct MemberSidebar {
     scroll_offset: usize,
+    selected_index: usize,
 }
 
 impl MemberSidebar {
     pub fn new() -> Self {
-        Self { scroll_offset: 0 }
+        Self {
+            scroll_offset: 0,
+            selected_index: 0,
+        }
     }
 }
 
@@ -24,12 +29,25 @@ impl Component for MemberSidebar {
         if store.ui.focus != FocusTarget::MemberSidebar {
             return Ok(None);
         }
+
+        // Build the flat member list (same order as render) to support p keybinding
+        let member_count = store
+            .ui
+            .selected_guild
+            .and_then(|gid| store.members.get(&gid))
+            .map(|m| m.len())
+            .unwrap_or(0);
+
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 self.scroll_offset = self.scroll_offset.saturating_add(1);
+                if member_count > 0 {
+                    self.selected_index = (self.selected_index + 1).min(member_count - 1);
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                self.selected_index = self.selected_index.saturating_sub(1);
             }
             KeyCode::Esc | KeyCode::Left => {
                 // Back to message list
@@ -38,6 +56,19 @@ impl Component for MemberSidebar {
             KeyCode::Enter | KeyCode::Right => {
                 // Go to message input
                 store.ui.focus = FocusTarget::MessageInput;
+            }
+            KeyCode::Char('p') => {
+                // Open profile overlay for the selected member
+                if let Some(guild_id) = store.ui.selected_guild {
+                    if let Some(members) = store.members.get(&guild_id) {
+                        if let Some(member) = members.get(self.selected_index) {
+                            let user_id = member.id;
+                            return Ok(Some(Action::ComponentKeyAction(
+                                KeyAction::OpenProfileOverlay { user_id },
+                            )));
+                        }
+                    }
+                }
             }
             _ => {}
         }
