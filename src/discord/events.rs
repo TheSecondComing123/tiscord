@@ -43,6 +43,7 @@ pub enum DiscordEvent {
         user_id: Id<UserMarker>,
         username: String,
         guilds: Vec<(Id<GuildMarker>, String)>,
+        guild_folders: Vec<crate::store::GuildFolder>,
         dm_channels: Vec<(Id<ChannelMarker>, Vec<String>)>,
         session_id: String,
         resume_url: String,
