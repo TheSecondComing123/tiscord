@@ -55,6 +55,7 @@ impl Component for ChannelTree {
                 if let Some(ch) = selectable.get(self.selected_index) {
                     let channel_id = ch.id;
                     store.ui.selected_channel = Some(channel_id);
+                    store.notifications.mark_read(channel_id);
                     return Ok(Some(Action::FetchMessages {
                         channel_id,
                         before: None,
