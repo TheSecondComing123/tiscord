@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -68,11 +68,29 @@ impl Default for NotificationConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReactionsConfig {
+    #[serde(default = "default_recent_emojis")]
+    pub recent: Vec<String>,
+}
+
+fn default_recent_emojis() -> Vec<String> {
+    vec!["👍".into(), "❤️".into(), "😂".into(), "🔥".into(), "👀".into(), "🚀".into()]
+}
+
+impl Default for ReactionsConfig {
+    fn default() -> Self {
+        Self { recent: default_recent_emojis() }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub ui: UiConfig,
     pub notifications: NotificationConfig,
+    #[serde(default)]
+    pub reactions: ReactionsConfig,
 }
 
 impl Default for Config {
@@ -80,6 +98,7 @@ impl Default for Config {
         Config {
             ui: UiConfig::default(),
             notifications: NotificationConfig::default(),
+            reactions: ReactionsConfig::default(),
         }
     }
 }
