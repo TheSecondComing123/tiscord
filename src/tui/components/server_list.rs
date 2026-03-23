@@ -24,7 +24,12 @@ impl ServerList {
             store.ui.dm_mode = true;
             store.ui.selected_guild = None;
             store.ui.selected_channel = None;
-            None
+            // Fetch DM channels if we don't have them yet
+            if store.dm_channels.is_empty() {
+                Some(Action::FetchDmChannels)
+            } else {
+                None
+            }
         } else {
             let guild_idx = self.selected_index - 1;
             if let Some(guild) = store.guilds.guilds.get(guild_idx) {

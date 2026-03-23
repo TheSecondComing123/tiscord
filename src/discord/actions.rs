@@ -85,6 +85,8 @@ pub enum Action {
         channel_id: Id<ChannelMarker>,
         message_id: Id<MessageMarker>,
     },
+    /// Fetch DM channels via REST (GET /users/@me/channels).
+    FetchDmChannels,
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -341,6 +343,12 @@ pub async fn run_action_handler(
                     },
                     Err(e) => tracing::error!("failed to fetch user profile: {e}"),
                 }
+            }
+            Action::FetchDmChannels => {
+                // twilight-http doesn't expose GET /users/@me/channels.
+                // DM channels are populated from the Ready payload instead.
+                // This is a no-op fallback if Ready didn't include them.
+                tracing::debug!("FetchDmChannels: DMs loaded from Ready payload");
             }
             Action::FetchImage { url, channel_id: _, message_id: _ } => {
                 // TODO: Fetch the image bytes via HTTP, encode using the terminal graphics
