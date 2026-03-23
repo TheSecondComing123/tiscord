@@ -1,4 +1,6 @@
+mod auth;
 mod config;
+mod discord;
 
 use config::Config;
 
