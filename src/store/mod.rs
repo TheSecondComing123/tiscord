@@ -76,14 +76,24 @@ impl Store {
             DiscordEvent::UserReady {
                 user_id,
                 username,
-                guild_ids,
+                guilds: ready_guilds,
                 ..
             } => {
                 self.current_user_id = Some(user_id);
                 self.current_user_name = Some(username.clone());
                 self.ui.connection_status = state::ConnectionStatus::Connected;
-                tracing::info!("ready as {} ({} guilds)", username, guild_ids.len());
-                // Guild details will arrive via GuildCreate events
+                tracing::info!("ready as {} ({} guilds)", username, ready_guilds.len());
+                // Create placeholder guilds from Ready data
+                // Channels will be empty until we fetch them via REST
+                for (guild_id, guild_name) in ready_guilds {
+                    let info = guilds::GuildInfo {
+                        id: guild_id,
+                        name: guild_name,
+                        icon: None,
+                        channels: Vec::new(),
+                    };
+                    self.guilds.add_guild(info);
+                }
             }
             DiscordEvent::GuildCreate(guild) => {
                 let channels = guild
@@ -211,6 +221,26 @@ impl Store {
             } => {
                 if let Some(buf) = self.messages.get_mut(&channel_id) {
                     buf.remove(message_id);
+                }
+            }
+            DiscordEvent::ChannelsLoaded {
+                guild_id,
+                channels,
+            } => {
+                let channel_infos: Vec<guilds::ChannelInfo> = channels
+                    .iter()
+                    .map(|ch| guilds::ChannelInfo {
+                        id: ch.id,
+                        name: ch.name.clone().unwrap_or_default(),
+                        kind: channel_kind(ch.kind),
+                        category_id: ch.parent_id,
+                        position: ch.position.unwrap_or(0),
+                    })
+                    .collect();
+                // Update the guild's channels
+                if let Some(guild) = self.guilds.guilds.iter_mut().find(|g| g.id == guild_id) {
+                    guild.channels = channel_infos;
+                    tracing::info!("loaded {} channels for {}", guild.channels.len(), guild.name);
                 }
             }
             DiscordEvent::MessagesLoaded {

@@ -37,16 +37,21 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         .or_else(|| user.get("username").and_then(|v| v.as_str()))?
         .to_string();
 
-    let guilds: Vec<Id<twilight_model::id::marker::GuildMarker>> = d
+    let guilds: Vec<(Id<twilight_model::id::marker::GuildMarker>, String)> = d
         .get("guilds")
         .and_then(|g| g.as_array())
         .map(|arr| {
             arr.iter()
                 .filter_map(|g| {
-                    g.get("id")
-                        .and_then(|id| id.as_str())
-                        .and_then(|s| s.parse().ok())
-                        .map(Id::new)
+                    let id = g.get("id")?.as_str()?.parse().ok()?;
+                    let name = g
+                        .get("properties")
+                        .and_then(|p| p.get("name"))
+                        .and_then(|n| n.as_str())
+                        .or_else(|| g.get("name").and_then(|n| n.as_str()))
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    Some((Id::new(id), name))
                 })
                 .collect()
         })
@@ -62,7 +67,7 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
     Some(DiscordEvent::UserReady {
         user_id,
         username,
-        guild_ids: guilds,
+        guilds,
         session_id,
         resume_url,
     })

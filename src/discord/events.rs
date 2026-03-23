@@ -37,11 +37,15 @@ pub enum DiscordEvent {
     UserReady {
         user_id: Id<UserMarker>,
         username: String,
-        guild_ids: Vec<Id<GuildMarker>>,
+        guilds: Vec<(Id<GuildMarker>, String)>,
         session_id: String,
         resume_url: String,
     },
     // REST response events (sent by action handler, not gateway)
+    ChannelsLoaded {
+        guild_id: Id<GuildMarker>,
+        channels: Vec<twilight_model::channel::Channel>,
+    },
     MessagesLoaded {
         channel_id: Id<ChannelMarker>,
         messages: Vec<Message>,

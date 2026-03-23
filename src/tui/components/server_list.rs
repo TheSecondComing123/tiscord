@@ -51,7 +51,8 @@ impl Component for ServerList {
                         store.ui.selected_guild = Some(guild_id);
                         store.ui.selected_channel = None;
                         store.ui.dm_mode = false;
-                        return Ok(Some(Action::FetchGuildMembers { guild_id }));
+                        // Fetch channels for this guild (more important than members)
+                        return Ok(Some(Action::FetchGuildChannels { guild_id }));
                     }
                 }
             }

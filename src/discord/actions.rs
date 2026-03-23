@@ -29,6 +29,9 @@ pub enum Action {
     FetchGuildMembers {
         guild_id: Id<GuildMarker>,
     },
+    FetchGuildChannels {
+        guild_id: Id<GuildMarker>,
+    },
 }
 
 pub async fn run_action_handler(
@@ -97,6 +100,20 @@ pub async fn run_action_handler(
                         Err(e) => tracing::error!("failed to deserialize messages: {e}"),
                     },
                     Err(e) => tracing::error!("failed to fetch messages: {e}"),
+                }
+            }
+            Action::FetchGuildChannels { guild_id } => {
+                match http.guild_channels(guild_id).await {
+                    Ok(response) => match response.models().await {
+                        Ok(channels) => {
+                            let _ = event_tx.send(DiscordEvent::ChannelsLoaded {
+                                guild_id,
+                                channels,
+                            });
+                        }
+                        Err(e) => tracing::error!("failed to deserialize channels: {e}"),
+                    },
+                    Err(e) => tracing::error!("failed to fetch channels: {e}"),
                 }
             }
             Action::FetchGuildMembers { guild_id } => {
