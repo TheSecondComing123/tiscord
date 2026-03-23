@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::discord::actions::Action;
 use crate::discord::events::DiscordEvent;
+use crate::store::search::SearchScope;
 use crate::store::state::{ConnectionStatus, FocusTarget, ReplyTarget};
 use crate::store::Store;
 use crate::tui::component::Component;
@@ -95,6 +96,7 @@ impl App {
                 let command_palette_ref = &self.command_palette;
                 let emoji_picker_ref = &self.emoji_picker;
                 let pins_overlay_ref = &self.pins_overlay;
+                let search_overlay_ref = &self.search_overlay;
                 let error_ref = &self.error_message;
 
                 terminal.draw(|frame| {
@@ -160,6 +162,11 @@ impl App {
                     if pins_overlay_ref.is_visible() {
                         pins_overlay_ref.render(frame, area, &store);
                     }
+
+                    // Overlay: search
+                    if search_overlay_ref.is_visible() {
+                        search_overlay_ref.render(frame, area, &store);
+                    }
                 })?;
             }
 
@@ -218,6 +225,16 @@ impl App {
             return Ok(());
         }
 
+        // When the search overlay is focused, route all keys to it.
+        if focus == FocusTarget::SearchOverlay {
+            let mut store = self.store.write().unwrap();
+            let result = self.search_overlay.handle_key_event(key, &mut store)?;
+            if let Some(action) = result {
+                let _ = self.action_tx.send(action);
+            }
+            return Ok(());
+        }
+
         // Global shortcuts (Ctrl+key)
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
@@ -259,6 +276,24 @@ impl App {
                 }
                 _ => {}
             }
+        }
+
+        // Open search overlay with `/` when MessageList is focused.
+        if focus == FocusTarget::MessageList
+            && key.code == KeyCode::Char('/')
+            && key.modifiers == KeyModifiers::NONE
+        {
+            let mut store = self.store.write().unwrap();
+            let scope = store
+                .ui
+                .selected_channel
+                .map(SearchScope::CurrentChannel)
+                .or_else(|| store.ui.selected_guild.map(SearchScope::Server));
+            if let Some(scope) = scope {
+                self.search_overlay.open(&mut store, scope);
+                store.ui.focus = FocusTarget::SearchOverlay;
+            }
+            return Ok(());
         }
 
         // Tab / Shift+Tab - cycle focus (except when typing in MessageInput)
