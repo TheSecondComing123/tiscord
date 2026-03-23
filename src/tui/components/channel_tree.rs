@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, List, ListItem};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use crate::discord::actions::Action;
 use crate::store::guilds::ChannelKind;
@@ -102,6 +102,7 @@ impl Component for ChannelTree {
 
         // Track which selectable index we are at while iterating
         let mut selectable_idx: usize = 0;
+        let mut selected_list_row: Option<usize> = None;
         let mut items: Vec<ListItem> = Vec::new();
 
         for ch in &channels {
@@ -115,6 +116,9 @@ impl Component for ChannelTree {
                 }
                 ChannelKind::Voice => {
                     let is_selected = selectable_idx == self.selected_index;
+                    if is_selected {
+                        selected_list_row = Some(items.len());
+                    }
                     let prefix = "v ";
                     let name = format!("{}{}", prefix, ch.name);
                     let style = if is_selected {
@@ -128,6 +132,9 @@ impl Component for ChannelTree {
                 // Text, Announcement, Forum treated as text channels
                 _ => {
                     let is_selected = selectable_idx == self.selected_index;
+                    if is_selected {
+                        selected_list_row = Some(items.len());
+                    }
                     let has_unread = store.notifications.has_unreads(ch.id);
                     let has_mention = store.notifications.has_mentions(ch.id);
 
@@ -168,7 +175,10 @@ impl Component for ChannelTree {
             }
         }
 
-        let list = List::new(items).block(block);
-        frame.render_widget(list, area);
+        let list = List::new(items)
+            .block(block)
+            .highlight_style(theme::selected());
+        let mut state = ListState::default().with_selected(selected_list_row);
+        frame.render_stateful_widget(list, area, &mut state);
     }
 }

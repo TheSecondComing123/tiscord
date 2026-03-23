@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, List, ListItem};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use crate::discord::actions::Action;
 use crate::store::Store;
@@ -146,7 +146,10 @@ impl Component for ServerList {
             items.push(ListItem::new(Line::from(spans)));
         }
 
-        let list = List::new(items).block(block);
-        frame.render_widget(list, area);
+        let list = List::new(items)
+            .block(block)
+            .highlight_style(theme::selected());
+        let mut state = ListState::default().with_selected(Some(self.selected_index));
+        frame.render_stateful_widget(list, area, &mut state);
     }
 }
