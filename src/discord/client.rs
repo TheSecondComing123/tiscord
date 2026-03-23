@@ -43,6 +43,10 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         .map(|arr| {
             arr.iter()
                 .filter_map(|g| {
+                    // Skip guild folders — they have a guild_ids array instead of real guild data
+                    if g.get("guild_ids").is_some() {
+                        return None;
+                    }
                     let id = g.get("id")?.as_str()?.parse().ok()?;
                     let name = g
                         .get("properties")
@@ -52,6 +56,34 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
                         .unwrap_or("Unknown")
                         .to_string();
                     Some((Id::new(id), name))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Parse DM channels from private_channels array
+    let dm_channels: Vec<(Id<twilight_model::id::marker::ChannelMarker>, Vec<String>)> = d
+        .get("private_channels")
+        .and_then(|pc| pc.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|ch| {
+                    let id = ch.get("id")?.as_str()?.parse().ok()?;
+                    let recipients: Vec<String> = ch
+                        .get("recipients")
+                        .and_then(|r| r.as_array())
+                        .map(|users| {
+                            users.iter()
+                                .filter_map(|u| {
+                                    u.get("global_name")
+                                        .and_then(|n| n.as_str())
+                                        .or_else(|| u.get("username").and_then(|n| n.as_str()))
+                                        .map(|s| s.to_string())
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    Some((Id::new(id), recipients))
                 })
                 .collect()
         })
@@ -68,6 +100,7 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         user_id,
         username,
         guilds,
+        dm_channels,
         session_id,
         resume_url,
     })

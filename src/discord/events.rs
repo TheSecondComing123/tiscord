@@ -43,6 +43,7 @@ pub enum DiscordEvent {
         user_id: Id<UserMarker>,
         username: String,
         guilds: Vec<(Id<GuildMarker>, String)>,
+        dm_channels: Vec<(Id<ChannelMarker>, Vec<String>)>,
         session_id: String,
         resume_url: String,
     },
@@ -108,6 +109,10 @@ pub enum DiscordEvent {
     /// REST response: a user profile was fetched and is ready to cache.
     UserProfileLoaded {
         profile: crate::store::profiles::UserProfile,
+    },
+    /// DM channels fetched via REST.
+    DmChannelsLoaded {
+        channels: Vec<twilight_model::channel::Channel>,
     },
     /// Image fetched and encoded; ready to be stored in the image cache.
     ImageLoaded {

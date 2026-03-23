@@ -115,12 +115,13 @@ impl Store {
                 user_id,
                 username,
                 guilds: ready_guilds,
+                dm_channels: ready_dms,
                 ..
             } => {
                 self.current_user_id = Some(user_id);
                 self.current_user_name = Some(username.clone());
                 self.ui.connection_status = state::ConnectionStatus::Connected;
-                tracing::info!("ready as {} ({} guilds)", username, ready_guilds.len());
+                tracing::info!("ready as {} ({} guilds, {} DMs)", username, ready_guilds.len(), ready_dms.len());
                 // Create placeholder guilds from Ready data
                 // Channels will be empty until we fetch them via REST
                 for (guild_id, guild_name) in ready_guilds {
@@ -132,11 +133,20 @@ impl Store {
                     };
                     self.guilds.add_guild(info);
                 }
+                // Populate DM channels from Ready data
+                for (channel_id, recipients) in ready_dms {
+                    self.dm_channels.push(DmChannel {
+                        channel_id,
+                        recipient_names: recipients,
+                        last_message_preview: None,
+                    });
+                }
             }
             DiscordEvent::GuildCreate(guild) => {
                 let channels = guild
                     .channels
                     .iter()
+                    .filter(|ch| !is_thread_channel(ch.kind))
                     .map(|ch| guilds::ChannelInfo {
                         id: ch.id,
                         name: ch.name.clone().unwrap_or_default(),
@@ -177,6 +187,20 @@ impl Store {
                     };
                     self.guilds.add_channel_to_guild(guild_id, info);
                     tracing::debug!("channel create: {}", ch.id);
+                } else if ch.kind == ChannelType::Private || ch.kind == ChannelType::Group {
+                    // DM or group DM channel
+                    let already_exists = self.dm_channels.iter().any(|dm| dm.channel_id == ch.id);
+                    if !already_exists {
+                        let recipients: Vec<String> = ch.recipients.as_deref().unwrap_or(&[]).iter()
+                            .map(|u| u.name.clone())
+                            .collect();
+                        self.dm_channels.push(DmChannel {
+                            channel_id: ch.id,
+                            recipient_names: recipients,
+                            last_message_preview: None,
+                        });
+                        tracing::debug!("DM channel create: {}", ch.id);
+                    }
                 }
             }
             DiscordEvent::ChannelUpdate(ch) => {
@@ -288,6 +312,7 @@ impl Store {
             } => {
                 let channel_infos: Vec<guilds::ChannelInfo> = channels
                     .iter()
+                    .filter(|ch| !is_thread_channel(ch.kind))
                     .map(|ch| guilds::ChannelInfo {
                         id: ch.id,
                         name: ch.name.clone().unwrap_or_default(),
@@ -488,11 +513,29 @@ impl Store {
             DiscordEvent::UserProfileLoaded { profile } => {
                 self.profiles.insert(profile);
             }
+            DiscordEvent::DmChannelsLoaded { channels } => {
+                self.dm_channels.clear();
+                for ch in channels {
+                    let recipients: Vec<String> = ch.recipients.as_deref().unwrap_or(&[]).iter()
+                        .map(|u| u.name.clone())
+                        .collect();
+                    self.dm_channels.push(DmChannel {
+                        channel_id: ch.id,
+                        recipient_names: recipients,
+                        last_message_preview: ch.last_message_id.map(|_| String::new()),
+                    });
+                }
+                tracing::info!("loaded {} DM channels", self.dm_channels.len());
+            }
             DiscordEvent::ImageLoaded { url, image } => {
                 self.image_cache.insert(url, image);
             }
         }
     }
+}
+
+fn is_thread_channel(ct: ChannelType) -> bool {
+    matches!(ct, ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::AnnouncementThread)
 }
 
 fn channel_kind(ct: ChannelType) -> guilds::ChannelKind {
