@@ -1,3 +1,4 @@
+mod app;
 mod auth;
 mod config;
 mod discord;
@@ -7,7 +8,43 @@ mod utils;
 
 use config::Config;
 
-fn main() {
-    let _config = Config::load().expect("failed to load config");
-    println!("tiscord");
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = Config::load()?;
+
+    // Init tracing to file
+    let data_dir = Config::data_dir();
+    std::fs::create_dir_all(&data_dir)?;
+    let file_appender = tracing_appender::rolling::daily(&data_dir, "tiscord.log");
+    tracing_subscriber::fmt()
+        .with_writer(file_appender)
+        .with_env_filter("tiscord=debug")
+        .init();
+
+    let token = auth::get_token()?;
+
+    // Create channels
+    let (discord_event_tx, discord_event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Create HTTP client and spawn action handler
+    let http = discord::client::create_http_client(&token);
+    tokio::spawn(discord::actions::run_action_handler(
+        http,
+        action_rx,
+        discord_event_tx.clone(),
+    ));
+
+    // Spawn gateway
+    tokio::spawn(discord::client::run_gateway(token, discord_event_tx));
+
+    // Create store and app
+    let store = std::sync::Arc::new(std::sync::RwLock::new(store::Store::new()));
+    let mut app = app::App::new(store, action_tx, discord_event_rx, config);
+
+    // Init terminal and run
+    let mut terminal = tui::terminal::init()?;
+    let result = app.run(&mut terminal).await;
+    tui::terminal::restore()?;
+    result
 }

@@ -58,7 +58,7 @@ impl Default for UiState {
             message_scroll_offset: 0,
             sidebar_scroll_offset: 0,
             dm_mode: false,
-            connection_status: ConnectionStatus::Connected,
+            connection_status: ConnectionStatus::Connecting,
             reply_to: None,
             editing_message: None,
         }
