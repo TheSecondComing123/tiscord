@@ -17,6 +17,32 @@ impl ServerList {
     pub fn new() -> Self {
         Self { selected_index: 0 }
     }
+
+    /// Select the current guild/DM and return a fetch action if needed.
+    fn apply_selection(&self, store: &mut Store) -> Option<Action> {
+        if self.selected_index == 0 {
+            store.ui.dm_mode = true;
+            store.ui.selected_guild = None;
+            store.ui.selected_channel = None;
+            None
+        } else {
+            let guild_idx = self.selected_index - 1;
+            if let Some(guild) = store.guilds.guilds.get(guild_idx) {
+                let guild_id = guild.id;
+                let needs_fetch = guild.channels.is_empty();
+                store.ui.selected_guild = Some(guild_id);
+                store.ui.selected_channel = None;
+                store.ui.dm_mode = false;
+                if needs_fetch {
+                    Some(Action::FetchGuildChannels { guild_id })
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    }
 }
 
 impl Component for ServerList {
@@ -25,35 +51,27 @@ impl Component for ServerList {
             return Ok(None);
         }
 
-        // Total entries: 1 (DMs) + number of guilds
         let total = 1 + store.guilds.guilds.len();
 
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 if self.selected_index + 1 < total {
                     self.selected_index += 1;
+                    let action = self.apply_selection(store);
+                    return Ok(action);
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
+                    let action = self.apply_selection(store);
+                    return Ok(action);
                 }
             }
             KeyCode::Enter => {
-                if self.selected_index == 0 {
-                    store.ui.dm_mode = true;
-                    store.ui.selected_guild = None;
-                    store.ui.selected_channel = None;
-                } else {
-                    let guild_idx = self.selected_index - 1;
-                    if let Some(guild) = store.guilds.guilds.get(guild_idx) {
-                        let guild_id = guild.id;
-                        store.ui.selected_guild = Some(guild_id);
-                        store.ui.selected_channel = None;
-                        store.ui.dm_mode = false;
-                        // Fetch channels for this guild (more important than members)
-                        return Ok(Some(Action::FetchGuildChannels { guild_id }));
-                    }
+                // Enter moves focus to channel tree
+                if !store.ui.dm_mode {
+                    store.ui.focus = FocusTarget::ChannelTree;
                 }
             }
             _ => {}
@@ -69,19 +87,20 @@ impl Component for ServerList {
             .border_style(Style::default().fg(theme::BORDER))
             .style(Style::default().bg(theme::BG));
 
-        // Build items: DMs entry first, then guilds
         let mut items: Vec<ListItem> = Vec::new();
 
         // DMs entry
         {
             let is_selected = self.selected_index == 0;
-            let label = "Direct Messages";
             let style = if is_selected {
                 theme::selected()
             } else {
                 theme::base()
             };
-            items.push(ListItem::new(Line::from(Span::styled(label, style))));
+            items.push(ListItem::new(Line::from(Span::styled(
+                "Direct Messages",
+                style,
+            ))));
         }
 
         // Guild entries
@@ -89,7 +108,6 @@ impl Component for ServerList {
             let list_index = i + 1;
             let is_selected = self.selected_index == list_index;
 
-            // Check if guild has any unread or mention
             let has_mention = guild
                 .channels
                 .iter()
@@ -109,7 +127,6 @@ impl Component for ServerList {
 
             let mut spans = vec![Span::styled(&guild.name, name_style)];
 
-            // Mention badge
             if has_mention {
                 let mention_count: u32 = guild
                     .channels
@@ -120,7 +137,9 @@ impl Component for ServerList {
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
                     format!("({})", mention_count),
-                    Style::default().fg(theme::MENTION).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::MENTION)
+                        .add_modifier(Modifier::BOLD),
                 ));
             }
 

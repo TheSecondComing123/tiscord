@@ -40,30 +40,43 @@ impl Component for ChannelTree {
 
         let total = selectable.len();
 
-        match key.code {
+        let changed = match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 if total > 0 && self.selected_index + 1 < total {
                     self.selected_index += 1;
+                    true
+                } else {
+                    false
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
+                    true
+                } else {
+                    false
                 }
             }
             KeyCode::Enter => {
-                if let Some(ch) = selectable.get(self.selected_index) {
-                    let channel_id = ch.id;
-                    store.ui.selected_channel = Some(channel_id);
-                    store.notifications.mark_read(channel_id);
-                    return Ok(Some(Action::FetchMessages {
-                        channel_id,
-                        before: None,
-                        limit: 50,
-                    }));
-                }
+                // Enter moves focus to message list
+                store.ui.focus = FocusTarget::MessageList;
+                return Ok(None);
             }
-            _ => {}
+            _ => false,
+        };
+
+        // Auto-select channel on navigate and fetch messages
+        if changed {
+            if let Some(ch) = selectable.get(self.selected_index) {
+                let channel_id = ch.id;
+                store.ui.selected_channel = Some(channel_id);
+                store.notifications.mark_read(channel_id);
+                return Ok(Some(Action::FetchMessages {
+                    channel_id,
+                    before: None,
+                    limit: 50,
+                }));
+            }
         }
 
         Ok(None)
