@@ -3,6 +3,19 @@ use twilight_model::id::marker::{MessageMarker, UserMarker};
 use twilight_model::id::Id;
 
 #[derive(Debug, Clone)]
+pub enum ReactionEmoji {
+    Unicode(String),
+    Custom { id: u64, name: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct Reaction {
+    pub emoji: ReactionEmoji,
+    pub count: u32,
+    pub me: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct StoredMessage {
     pub id: Id<MessageMarker>,
     pub author_name: String,
@@ -12,6 +25,7 @@ pub struct StoredMessage {
     pub reply_to: Option<ReplyContext>,
     pub attachments: Vec<Attachment>,
     pub is_edited: bool,
+    pub reactions: Vec<Reaction>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +92,54 @@ impl MessageBuffer {
             self.messages.pop_back();
         }
     }
+
+    pub fn add_reaction(&mut self, message_id: Id<MessageMarker>, emoji: ReactionEmoji, user_is_self: bool) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
+            if let Some(reaction) = msg.reactions.iter_mut().find(|r| reaction_emoji_eq(&r.emoji, &emoji)) {
+                reaction.count += 1;
+                if user_is_self {
+                    reaction.me = true;
+                }
+            } else {
+                msg.reactions.push(Reaction {
+                    emoji,
+                    count: 1,
+                    me: user_is_self,
+                });
+            }
+        }
+    }
+
+    pub fn remove_reaction(&mut self, message_id: Id<MessageMarker>, emoji: &ReactionEmoji, user_is_self: bool) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
+            if let Some(reaction) = msg.reactions.iter_mut().find(|r| reaction_emoji_eq(&r.emoji, emoji)) {
+                if reaction.count > 1 {
+                    reaction.count -= 1;
+                    if user_is_self {
+                        reaction.me = false;
+                    }
+                } else {
+                    // count will drop to 0, remove the entry
+                    let emoji_ref = emoji;
+                    msg.reactions.retain(|r| !reaction_emoji_eq(&r.emoji, emoji_ref));
+                }
+            }
+        }
+    }
+
+    pub fn remove_all_reactions(&mut self, message_id: Id<MessageMarker>) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
+            msg.reactions.clear();
+        }
+    }
+}
+
+pub fn reaction_emoji_eq(a: &ReactionEmoji, b: &ReactionEmoji) -> bool {
+    match (a, b) {
+        (ReactionEmoji::Unicode(a), ReactionEmoji::Unicode(b)) => a == b,
+        (ReactionEmoji::Custom { id: a, .. }, ReactionEmoji::Custom { id: b, .. }) => a == b,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -94,6 +156,7 @@ mod tests {
             reply_to: None,
             attachments: vec![],
             is_edited: false,
+            reactions: vec![],
         }
     }
 
@@ -148,5 +211,57 @@ mod tests {
         let msg = buf.messages().iter().find(|m| m.id == Id::new(1)).unwrap();
         assert_eq!(msg.content, "edited");
         assert!(msg.is_edited);
+    }
+
+    #[test]
+    fn test_add_reaction_new_emoji() {
+        let mut buf = MessageBuffer::new(10);
+        buf.push(make_test_msg(1, "hello"));
+
+        buf.add_reaction(Id::new(1), ReactionEmoji::Unicode("👍".to_string()), false);
+
+        let msg = buf.messages().iter().find(|m| m.id == Id::new(1)).unwrap();
+        assert_eq!(msg.reactions.len(), 1);
+        assert_eq!(msg.reactions[0].count, 1);
+        assert!(!msg.reactions[0].me);
+    }
+
+    #[test]
+    fn test_add_reaction_existing_increments() {
+        let mut buf = MessageBuffer::new(10);
+        buf.push(make_test_msg(1, "hello"));
+
+        buf.add_reaction(Id::new(1), ReactionEmoji::Unicode("👍".to_string()), false);
+        buf.add_reaction(Id::new(1), ReactionEmoji::Unicode("👍".to_string()), true);
+
+        let msg = buf.messages().iter().find(|m| m.id == Id::new(1)).unwrap();
+        assert_eq!(msg.reactions.len(), 1);
+        assert_eq!(msg.reactions[0].count, 2);
+        assert!(msg.reactions[0].me);
+    }
+
+    #[test]
+    fn test_remove_reaction_decrements() {
+        let mut buf = MessageBuffer::new(10);
+        buf.push(make_test_msg(1, "hello"));
+
+        buf.add_reaction(Id::new(1), ReactionEmoji::Unicode("👍".to_string()), true);
+        buf.remove_reaction(Id::new(1), &ReactionEmoji::Unicode("👍".to_string()), true);
+
+        let msg = buf.messages().iter().find(|m| m.id == Id::new(1)).unwrap();
+        assert_eq!(msg.reactions.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_all_reactions() {
+        let mut buf = MessageBuffer::new(10);
+        buf.push(make_test_msg(1, "hello"));
+
+        buf.add_reaction(Id::new(1), ReactionEmoji::Unicode("👍".to_string()), false);
+        buf.add_reaction(Id::new(1), ReactionEmoji::Unicode("❤️".to_string()), true);
+        buf.remove_all_reactions(Id::new(1));
+
+        let msg = buf.messages().iter().find(|m| m.id == Id::new(1)).unwrap();
+        assert_eq!(msg.reactions.len(), 0);
     }
 }

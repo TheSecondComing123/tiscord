@@ -3,6 +3,7 @@ pub mod messages;
 pub mod notifications;
 pub mod state;
 pub mod typing;
+pub mod voice;
 
 use std::collections::HashMap;
 use twilight_model::channel::ChannelType;
@@ -49,6 +50,7 @@ pub struct Store {
     pub current_user_name: Option<String>,
     pub dm_channels: Vec<DmChannel>,
     pub typing: typing::TypingState,
+    pub voice: voice::VoiceState,
 }
 
 impl Store {
@@ -63,6 +65,7 @@ impl Store {
             current_user_name: None,
             dm_channels: Vec::new(),
             typing: typing::TypingState::default(),
+            voice: voice::VoiceState::default(),
         }
     }
 
@@ -211,6 +214,27 @@ impl Store {
                         })
                         .collect(),
                     is_edited: false,
+                    reactions: msg
+                        .reactions
+                        .iter()
+                        .map(|r| messages::Reaction {
+                            emoji: match &r.emoji {
+                                twilight_model::channel::message::EmojiReactionType::Unicode {
+                                    name,
+                                } => messages::ReactionEmoji::Unicode(name.clone()),
+                                twilight_model::channel::message::EmojiReactionType::Custom {
+                                    id,
+                                    name,
+                                    ..
+                                } => messages::ReactionEmoji::Custom {
+                                    id: id.get(),
+                                    name: name.clone().unwrap_or_default(),
+                                },
+                            },
+                            count: r.count as u32,
+                            me: r.me,
+                        })
+                        .collect(),
                 };
                 self.get_or_create_message_buffer(channel_id).push(stored);
             }
@@ -281,6 +305,27 @@ impl Store {
                             })
                             .collect(),
                         is_edited: false,
+                        reactions: msg
+                            .reactions
+                            .iter()
+                            .map(|r| messages::Reaction {
+                                emoji: match &r.emoji {
+                                    twilight_model::channel::message::EmojiReactionType::Unicode {
+                                        name,
+                                    } => messages::ReactionEmoji::Unicode(name.clone()),
+                                    twilight_model::channel::message::EmojiReactionType::Custom {
+                                        id,
+                                        name,
+                                        ..
+                                    } => messages::ReactionEmoji::Custom {
+                                        id: id.get(),
+                                        name: name.clone().unwrap_or_default(),
+                                    },
+                                },
+                                count: r.count as u32,
+                                me: r.me,
+                            })
+                            .collect(),
                     })
                     .collect();
                 self.get_or_create_message_buffer(channel_id).prepend(stored);
@@ -343,6 +388,44 @@ impl Store {
                     if let Some(member) = members.iter_mut().find(|m| m.id == user_id) {
                         member.custom_status = custom_status;
                     }
+                }
+            }
+            DiscordEvent::ReactionAdd { channel_id, message_id, emoji, user_id } => {
+                let is_self = Some(user_id) == self.current_user_id;
+                if let Some(buf) = self.messages.get_mut(&channel_id) {
+                    buf.add_reaction(message_id, emoji, is_self);
+                }
+            }
+            DiscordEvent::ReactionRemove { channel_id, message_id, emoji, user_id } => {
+                let is_self = Some(user_id) == self.current_user_id;
+                if let Some(buf) = self.messages.get_mut(&channel_id) {
+                    buf.remove_reaction(message_id, &emoji, is_self);
+                }
+            }
+            DiscordEvent::ReactionRemoveAll { channel_id, message_id } => {
+                if let Some(buf) = self.messages.get_mut(&channel_id) {
+                    buf.remove_all_reactions(message_id);
+                }
+            }
+            DiscordEvent::VoiceStateUpdate { channel_id, user_id, display_name, self_mute, self_deaf } => {
+                let name = if display_name.is_empty() {
+                    self.members
+                        .values()
+                        .flat_map(|m| m.iter())
+                        .find(|m| m.id == user_id)
+                        .map(|m| m.name.clone())
+                        .unwrap_or_else(|| format!("User {}", user_id))
+                } else {
+                    display_name
+                };
+                match channel_id {
+                    Some(cid) => self.voice.user_joined(cid, voice::VoiceUser {
+                        user_id,
+                        display_name: name,
+                        self_mute,
+                        self_deaf,
+                    }),
+                    None => self.voice.user_left(user_id),
                 }
             }
         }
@@ -433,6 +516,7 @@ mod tests {
                 reply_to: None,
                 attachments: vec![],
                 is_edited: false,
+                reactions: vec![],
             };
             store.get_or_create_message_buffer(channel_id).push(msg);
         }
@@ -449,6 +533,7 @@ mod tests {
                 reply_to: None,
                 attachments: vec![],
                 is_edited: false,
+                reactions: vec![],
             })
             .collect();
         store

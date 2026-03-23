@@ -1,5 +1,6 @@
 use tokio::sync::mpsc;
 use twilight_http::Client as HttpClient;
+use twilight_http::request::channel::reaction::RequestReactionType;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
 use twilight_model::id::Id;
 
@@ -32,6 +33,18 @@ pub enum Action {
     },
     FetchGuildChannels {
         guild_id: Id<GuildMarker>,
+    },
+    AddReaction {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+        /// Unicode emoji string (e.g. "👍") or custom emoji in "name:id" format.
+        emoji: String,
+    },
+    RemoveReaction {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+        /// Unicode emoji string (e.g. "👍") or custom emoji in "name:id" format.
+        emoji: String,
     },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
@@ -118,6 +131,29 @@ pub async fn run_action_handler(
                         Err(e) => tracing::error!("failed to deserialize channels: {e}"),
                     },
                     Err(e) => tracing::error!("failed to fetch channels: {e}"),
+                }
+            }
+            Action::AddReaction {
+                channel_id,
+                message_id,
+                emoji,
+            } => {
+                let reaction = RequestReactionType::Unicode { name: &emoji };
+                if let Err(e) = http.create_reaction(channel_id, message_id, &reaction).await {
+                    tracing::error!("failed to add reaction: {e}");
+                }
+            }
+            Action::RemoveReaction {
+                channel_id,
+                message_id,
+                emoji,
+            } => {
+                let reaction = RequestReactionType::Unicode { name: &emoji };
+                if let Err(e) = http
+                    .delete_current_user_reaction(channel_id, message_id, &reaction)
+                    .await
+                {
+                    tracing::error!("failed to remove reaction: {e}");
                 }
             }
             Action::ComponentKeyAction(_) => {

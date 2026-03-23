@@ -46,6 +46,22 @@ pub enum DiscordEvent {
         session_id: String,
         resume_url: String,
     },
+    ReactionAdd {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+        emoji: crate::store::messages::ReactionEmoji,
+        user_id: Id<UserMarker>,
+    },
+    ReactionRemove {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+        emoji: crate::store::messages::ReactionEmoji,
+        user_id: Id<UserMarker>,
+    },
+    ReactionRemoveAll {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+    },
     // REST response events (sent by action handler, not gateway)
     ChannelsLoaded {
         guild_id: Id<GuildMarker>,
@@ -58,6 +74,13 @@ pub enum DiscordEvent {
     MembersLoaded {
         guild_id: Id<GuildMarker>,
         members: Vec<twilight_model::guild::Member>,
+    },
+    VoiceStateUpdate {
+        channel_id: Option<Id<ChannelMarker>>,
+        user_id: Id<UserMarker>,
+        display_name: String,
+        self_mute: bool,
+        self_deaf: bool,
     },
 }
 
@@ -107,6 +130,55 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
                 custom_status,
             })
         },
+        Event::VoiceStateUpdate(e) => Some(DiscordEvent::VoiceStateUpdate {
+            channel_id: e.0.channel_id,
+            user_id: e.0.user_id,
+            display_name: String::new(), // resolved in store from member cache
+            self_mute: e.0.self_mute,
+            self_deaf: e.0.self_deaf,
+        }),
+        Event::ReactionAdd(ra) => {
+            let emoji = match &ra.emoji {
+                twilight_model::channel::message::EmojiReactionType::Unicode { name } => {
+                    crate::store::messages::ReactionEmoji::Unicode(name.clone())
+                }
+                twilight_model::channel::message::EmojiReactionType::Custom { id, name, .. } => {
+                    crate::store::messages::ReactionEmoji::Custom {
+                        id: id.get(),
+                        name: name.clone().unwrap_or_default(),
+                    }
+                }
+            };
+            Some(DiscordEvent::ReactionAdd {
+                channel_id: ra.channel_id,
+                message_id: ra.message_id,
+                emoji,
+                user_id: ra.user_id,
+            })
+        }
+        Event::ReactionRemove(rr) => {
+            let emoji = match &rr.emoji {
+                twilight_model::channel::message::EmojiReactionType::Unicode { name } => {
+                    crate::store::messages::ReactionEmoji::Unicode(name.clone())
+                }
+                twilight_model::channel::message::EmojiReactionType::Custom { id, name, .. } => {
+                    crate::store::messages::ReactionEmoji::Custom {
+                        id: id.get(),
+                        name: name.clone().unwrap_or_default(),
+                    }
+                }
+            };
+            Some(DiscordEvent::ReactionRemove {
+                channel_id: rr.channel_id,
+                message_id: rr.message_id,
+                emoji,
+                user_id: rr.user_id,
+            })
+        }
+        Event::ReactionRemoveAll(rra) => Some(DiscordEvent::ReactionRemoveAll {
+            channel_id: rra.channel_id,
+            message_id: rra.message_id,
+        }),
         _ => None,
     }
 }
