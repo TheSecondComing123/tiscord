@@ -2,6 +2,8 @@ mod auth;
 mod config;
 mod discord;
 mod store;
+mod tui;
+mod utils;
 
 use config::Config;
 
