@@ -10,11 +10,12 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::discord::actions::Action;
 use crate::discord::events::DiscordEvent;
-use crate::store::state::{ConnectionStatus, FocusTarget, InputMode};
+use crate::store::state::{ConnectionStatus, FocusTarget, InputMode, ReplyTarget};
 use crate::store::Store;
 use crate::tui::component::Component;
 use crate::tui::components::member_sidebar::MemberSidebar;
 use crate::tui::components::message_pane::MessagePane;
+use crate::tui::components::overlays::command_palette::CommandPalette;
 use crate::tui::components::sidebar::ServerChannelSidebar;
 use crate::tui::keybindings::{KeyAction, KeyDispatcher};
 use crate::tui::terminal::Tui;
@@ -30,6 +31,7 @@ pub struct App {
     sidebar: ServerChannelSidebar,
     message_pane: MessagePane,
     member_sidebar: MemberSidebar,
+    command_palette: CommandPalette,
 }
 
 impl App {
@@ -49,6 +51,7 @@ impl App {
             sidebar: ServerChannelSidebar::new(),
             message_pane: MessagePane::new(),
             member_sidebar: MemberSidebar::new(),
+            command_palette: CommandPalette::new(),
         }
     }
 
@@ -72,6 +75,7 @@ impl App {
                 let sidebar_ref = &self.sidebar;
                 let message_pane_ref = &self.message_pane;
                 let member_sidebar_ref = &self.member_sidebar;
+                let command_palette_ref = &self.command_palette;
 
                 terminal.draw(|frame| {
                     let area = frame.area();
@@ -127,6 +131,11 @@ impl App {
                         };
                         frame.render_widget(status_line, status_area);
                     }
+
+                    // Overlay: command palette (rendered on top of everything else).
+                    if command_palette_ref.is_visible() {
+                        command_palette_ref.render(frame, area, &store);
+                    }
                 })?;
             }
 
@@ -150,6 +159,17 @@ impl App {
             let store = self.store.read().unwrap();
             (store.ui.input_mode, store.ui.focus)
         };
+
+        // When the command palette is focused, route all keys to it directly
+        // before the normal dispatcher has a chance to intercept them.
+        if focus == FocusTarget::CommandPalette {
+            let mut store = self.store.write().unwrap();
+            let result = self.command_palette.handle_key_event(key, &mut store)?;
+            if let Some(action) = result {
+                let _ = self.action_tx.send(action);
+            }
+            return Ok(());
+        }
 
         let action = self.key_dispatcher.dispatch(key, mode, focus);
 
@@ -184,6 +204,9 @@ impl App {
                 let mut store = self.store.write().unwrap();
                 store.ui.focus = FocusTarget::MessageList;
                 store.ui.input_mode = InputMode::Normal;
+                store.ui.reply_to = None;
+                store.ui.editing_message = None;
+                self.message_pane.message_input.clear();
             }
 
             KeyAction::CycleFocusForward => {
@@ -262,12 +285,75 @@ impl App {
                 }
             }
 
+            KeyAction::Reply => {
+                let store_read = self.store.read().unwrap();
+                let msg_data = self
+                    .message_pane
+                    .message_list
+                    .get_selected_message(&store_read)
+                    .map(|m| (m.id, m.author_name.clone(), m.content.chars().take(80).collect::<String>()));
+                drop(store_read);
+
+                if let Some((message_id, author_name, content_preview)) = msg_data {
+                    let mut store = self.store.write().unwrap();
+                    store.ui.reply_to = Some(ReplyTarget {
+                        message_id,
+                        author_name,
+                        content_preview,
+                    });
+                    store.ui.focus = FocusTarget::MessageInput;
+                    store.ui.input_mode = InputMode::Insert;
+                }
+            }
+
+            KeyAction::EditMessage => {
+                let store_read = self.store.read().unwrap();
+                let current_user_id = store_read.current_user_id;
+                let msg_data = self
+                    .message_pane
+                    .message_list
+                    .get_selected_message(&store_read)
+                    .filter(|m| Some(m.author_id) == current_user_id)
+                    .map(|m| (m.id, m.content.clone()));
+                drop(store_read);
+
+                if let Some((message_id, content)) = msg_data {
+                    let mut store = self.store.write().unwrap();
+                    store.ui.editing_message = Some(message_id);
+                    store.ui.reply_to = None;
+                    store.ui.focus = FocusTarget::MessageInput;
+                    store.ui.input_mode = InputMode::Insert;
+                    drop(store);
+                    self.message_pane.message_input.set_content(content);
+                }
+            }
+
+            KeyAction::DeleteMessage => {
+                let store_read = self.store.read().unwrap();
+                let current_user_id = store_read.current_user_id;
+                let channel_id = store_read.ui.selected_channel;
+                let msg_data = self
+                    .message_pane
+                    .message_list
+                    .get_selected_message(&store_read)
+                    .filter(|m| Some(m.author_id) == current_user_id)
+                    .and_then(|m| channel_id.map(|ch| (ch, m.id)));
+                drop(store_read);
+
+                if let Some((channel_id, message_id)) = msg_data {
+                    let _ = self.action_tx.send(Action::DeleteMessage { channel_id, message_id });
+                }
+            }
+
+            KeyAction::OpenCommandPalette => {
+                let mut store = self.store.write().unwrap();
+                self.command_palette.open(&store);
+                store.ui.focus = FocusTarget::CommandPalette;
+                store.ui.input_mode = InputMode::Insert;
+            }
+
             // Actions not yet implemented - ignore for now
-            KeyAction::OpenCommandPalette
-            | KeyAction::Reply
-            | KeyAction::EditMessage
-            | KeyAction::DeleteMessage
-            | KeyAction::AddReaction
+            KeyAction::AddReaction
             | KeyAction::YankMessage
             | KeyAction::OpenSearch
             | KeyAction::NextSearchResult

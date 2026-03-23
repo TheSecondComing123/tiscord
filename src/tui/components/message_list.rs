@@ -5,6 +5,7 @@ use ratatui::widgets::Paragraph;
 
 use crate::discord::actions::Action;
 use crate::store::Store;
+use crate::store::messages::StoredMessage;
 use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
 use crate::tui::components::message::render_message;
@@ -21,6 +22,13 @@ impl MessageList {
             selected_index: None,
             auto_scroll: true,
         }
+    }
+
+    pub fn get_selected_message<'a>(&self, store: &'a Store) -> Option<&'a StoredMessage> {
+        let channel_id = store.ui.selected_channel?;
+        let buffer = store.messages.get(&channel_id)?;
+        let index = self.selected_index?;
+        buffer.messages().get(index)
     }
 }
 

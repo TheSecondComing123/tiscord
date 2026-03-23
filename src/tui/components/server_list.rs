@@ -47,9 +47,11 @@ impl Component for ServerList {
                 } else {
                     let guild_idx = self.selected_index - 1;
                     if let Some(guild) = store.guilds.guilds.get(guild_idx) {
-                        store.ui.selected_guild = Some(guild.id);
+                        let guild_id = guild.id;
+                        store.ui.selected_guild = Some(guild_id);
                         store.ui.selected_channel = None;
                         store.ui.dm_mode = false;
+                        return Ok(Some(Action::FetchGuildMembers { guild_id }));
                     }
                 }
             }
