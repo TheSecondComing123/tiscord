@@ -3,6 +3,7 @@ mod auth;
 mod config;
 mod discord;
 mod store;
+mod token_file;
 mod tui;
 mod utils;
 
