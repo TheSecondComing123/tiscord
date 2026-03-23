@@ -65,6 +65,19 @@ impl MessageBuffer {
             msg.is_edited = true;
         }
     }
+
+    /// Prepend a batch of messages to the front of the buffer (older history).
+    /// Messages are expected in chronological order (oldest first); they will
+    /// appear at the front of the deque in that order.
+    /// If prepending would exceed capacity, the excess is trimmed from the back.
+    pub fn prepend(&mut self, msgs: Vec<StoredMessage>) {
+        for msg in msgs.into_iter().rev() {
+            self.messages.push_front(msg);
+        }
+        while self.messages.len() > self.capacity {
+            self.messages.pop_back();
+        }
+    }
 }
 
 #[cfg(test)]

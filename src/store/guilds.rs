@@ -66,6 +66,32 @@ impl GuildState {
 
     /// Returns channels for the guild sorted by category position then channel position.
     /// Categories come before their children. Uncategorized channels sort first.
+    pub fn add_channel_to_guild(&mut self, guild_id: Id<GuildMarker>, channel: ChannelInfo) {
+        if let Some(&idx) = self.guild_map.get(&guild_id) {
+            let channels = &mut self.guilds[idx].channels;
+            // Replace if same id already exists, otherwise append.
+            if let Some(existing) = channels.iter_mut().find(|c| c.id == channel.id) {
+                *existing = channel;
+            } else {
+                channels.push(channel);
+            }
+        }
+    }
+
+    pub fn update_channel_in_guild(&mut self, guild_id: Id<GuildMarker>, channel: ChannelInfo) {
+        self.add_channel_to_guild(guild_id, channel);
+    }
+
+    pub fn remove_channel_from_guild(
+        &mut self,
+        guild_id: Id<GuildMarker>,
+        channel_id: Id<ChannelMarker>,
+    ) {
+        if let Some(&idx) = self.guild_map.get(&guild_id) {
+            self.guilds[idx].channels.retain(|c| c.id != channel_id);
+        }
+    }
+
     pub fn get_channels_for_guild(&self, id: Id<GuildMarker>) -> Vec<&ChannelInfo> {
         let guild = match self.get_guild(id) {
             Some(g) => g,
