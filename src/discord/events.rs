@@ -62,6 +62,10 @@ pub enum DiscordEvent {
         channel_id: Id<ChannelMarker>,
         message_id: Id<MessageMarker>,
     },
+    // Channel pins updated (gateway event: a message was pinned or unpinned)
+    ChannelPinsUpdate {
+        channel_id: Id<ChannelMarker>,
+    },
     // REST response events (sent by action handler, not gateway)
     ChannelsLoaded {
         guild_id: Id<GuildMarker>,
@@ -75,12 +79,20 @@ pub enum DiscordEvent {
         guild_id: Id<GuildMarker>,
         members: Vec<twilight_model::guild::Member>,
     },
+    PinnedMessagesLoaded {
+        channel_id: Id<ChannelMarker>,
+        messages: Vec<crate::store::messages::StoredMessage>,
+    },
     VoiceStateUpdate {
         channel_id: Option<Id<ChannelMarker>>,
         user_id: Id<UserMarker>,
         display_name: String,
         self_mute: bool,
         self_deaf: bool,
+    },
+    /// Search results returned by the action handler (REST response).
+    SearchResults {
+        results: Vec<crate::store::search::SearchResult>,
     },
 }
 
@@ -178,6 +190,9 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
         Event::ReactionRemoveAll(rra) => Some(DiscordEvent::ReactionRemoveAll {
             channel_id: rra.channel_id,
             message_id: rra.message_id,
+        }),
+        Event::ChannelPinsUpdate(cpu) => Some(DiscordEvent::ChannelPinsUpdate {
+            channel_id: cpu.channel_id,
         }),
         _ => None,
     }
