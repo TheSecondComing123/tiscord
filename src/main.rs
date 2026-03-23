@@ -1,6 +1,7 @@
 mod auth;
 mod config;
 mod discord;
+mod store;
 
 use config::Config;
 
