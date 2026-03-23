@@ -9,6 +9,8 @@ pub enum FocusTarget {
     MessageInput,
     MemberSidebar,
     CommandPalette,
+    EmojiPicker,
+    SearchOverlay,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -186,6 +186,30 @@ impl Component for MessageList {
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 return Ok(Some(Action::ComponentKeyAction(KeyAction::DeleteMessage)));
             }
+            (KeyCode::Char('+'), KeyModifiers::NONE) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::OpenEmojiPicker)));
+            }
+            // P (uppercase) - pin or unpin the selected message
+            (KeyCode::Char('P'), _) => {
+                if let Some(msg) = self.get_selected_message(store) {
+                    let message_id = msg.id;
+                    if let Some(channel_id) = store.ui.selected_channel {
+                        // Check if already pinned
+                        let is_pinned = store
+                            .pinned_messages
+                            .get(&channel_id)
+                            .and_then(|opt| opt.as_ref())
+                            .map(|pins| pins.iter().any(|p| p.id == message_id))
+                            .unwrap_or(false);
+
+                        if is_pinned {
+                            return Ok(Some(Action::UnpinMessage { channel_id, message_id }));
+                        } else {
+                            return Ok(Some(Action::PinMessage { channel_id, message_id }));
+                        }
+                    }
+                }
+            }
 
             _ => {}
         }

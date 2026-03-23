@@ -16,6 +16,9 @@ use crate::tui::component::Component;
 use crate::tui::components::member_sidebar::MemberSidebar;
 use crate::tui::components::message_pane::MessagePane;
 use crate::tui::components::overlays::command_palette::CommandPalette;
+use crate::tui::components::overlays::emoji_picker::EmojiPicker;
+use crate::tui::components::overlays::pins::PinsOverlay;
+use crate::tui::components::overlays::search::SearchOverlay;
 use crate::tui::components::sidebar::ServerChannelSidebar;
 use crate::tui::keybindings::KeyAction;
 use crate::tui::terminal::Tui;
@@ -31,6 +34,9 @@ pub struct App {
     message_pane: MessagePane,
     member_sidebar: MemberSidebar,
     command_palette: CommandPalette,
+    emoji_picker: EmojiPicker,
+    search_overlay: SearchOverlay,
+    pins_overlay: PinsOverlay,
     error_message: Option<(String, Instant)>,
 }
 
@@ -41,6 +47,7 @@ impl App {
         discord_event_rx: mpsc::UnboundedReceiver<DiscordEvent>,
         config: Config,
     ) -> Self {
+        let recent_emojis = config.reactions.recent.clone();
         Self {
             store,
             action_tx,
@@ -51,6 +58,9 @@ impl App {
             message_pane: MessagePane::new(),
             member_sidebar: MemberSidebar::new(),
             command_palette: CommandPalette::new(),
+            emoji_picker: EmojiPicker::new(recent_emojis),
+            search_overlay: SearchOverlay::new(),
+            pins_overlay: PinsOverlay::new(),
             error_message: None,
         }
     }
@@ -83,6 +93,7 @@ impl App {
                 let message_pane_ref = &self.message_pane;
                 let member_sidebar_ref = &self.member_sidebar;
                 let command_palette_ref = &self.command_palette;
+                let emoji_picker_ref = &self.emoji_picker;
                 let error_ref = &self.error_message;
 
                 terminal.draw(|frame| {
@@ -138,6 +149,11 @@ impl App {
                     if command_palette_ref.is_visible() {
                         command_palette_ref.render(frame, area, &store);
                     }
+
+                    // Overlay: emoji picker
+                    if emoji_picker_ref.visible {
+                        emoji_picker_ref.render(frame, area, &store);
+                    }
                 })?;
             }
 
@@ -176,6 +192,26 @@ impl App {
             return Ok(());
         }
 
+        // When the emoji picker is focused, route all keys to it.
+        if focus == FocusTarget::EmojiPicker {
+            let mut store = self.store.write().unwrap();
+            let result = self.emoji_picker.handle_key_event(key, &mut store)?;
+            if let Some(action) = result {
+                let _ = self.action_tx.send(action);
+            }
+            return Ok(());
+        }
+
+        // When the pins overlay is visible, route keys to it.
+        if self.pins_overlay.is_visible() {
+            let mut store = self.store.write().unwrap();
+            let result = self.pins_overlay.handle_key_event(key, &mut store)?;
+            if let Some(action) = result {
+                let _ = self.action_tx.send(action);
+            }
+            return Ok(());
+        }
+
         // Global shortcuts (Ctrl+key)
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
@@ -196,6 +232,22 @@ impl App {
                         store.ui.focus = FocusTarget::MemberSidebar;
                     } else if store.ui.focus == FocusTarget::MemberSidebar {
                         store.ui.focus = FocusTarget::MessageList;
+                    }
+                    return Ok(());
+                }
+                KeyCode::Char('p') => {
+                    let store = self.store.read().unwrap();
+                    if let Some(channel_id) = store.ui.selected_channel {
+                        // Fetch pins if not cached; open the overlay.
+                        let needs_fetch = store
+                            .pinned_messages
+                            .get(&channel_id)
+                            .is_none();
+                        drop(store);
+                        self.pins_overlay.open();
+                        if needs_fetch {
+                            let _ = self.action_tx.send(Action::FetchPinnedMessages { channel_id });
+                        }
                     }
                     return Ok(());
                 }
@@ -235,7 +287,7 @@ impl App {
             FocusTarget::MemberSidebar => {
                 self.member_sidebar.handle_key_event(key, &mut store)?
             }
-            FocusTarget::CommandPalette => {
+            FocusTarget::CommandPalette | FocusTarget::EmojiPicker | FocusTarget::SearchOverlay => {
                 // Already handled above, but satisfy the match
                 None
             }
@@ -292,6 +344,19 @@ impl App {
 
                             if let Some((channel_id, message_id)) = msg_data {
                                 let _ = self.action_tx.send(Action::DeleteMessage { channel_id, message_id });
+                            }
+                        }
+                        KeyAction::OpenEmojiPicker => {
+                            let channel_id = store.ui.selected_channel;
+                            let msg_data = self
+                                .message_pane
+                                .message_list
+                                .get_selected_message(&store)
+                                .and_then(|m| channel_id.map(|ch| (ch, m.id)));
+
+                            if let Some((channel_id, message_id)) = msg_data {
+                                self.emoji_picker.open(channel_id, message_id);
+                                store.ui.focus = FocusTarget::EmojiPicker;
                             }
                         }
                     }
@@ -402,6 +467,8 @@ fn render_status_bar(
         FocusTarget::MessageInput => ("INPUT", theme::ACCENT),
         FocusTarget::MemberSidebar => ("MEMBERS", theme::TEXT_SECONDARY),
         FocusTarget::CommandPalette => ("PALETTE", theme::ACCENT),
+        FocusTarget::EmojiPicker => ("EMOJI", theme::ACCENT),
+        FocusTarget::SearchOverlay => ("SEARCH", theme::ACCENT),
     };
     let right_span = Span::styled(
         format!(" {focus_text} "),

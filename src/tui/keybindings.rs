@@ -7,4 +7,5 @@ pub enum KeyAction {
     Reply,
     EditMessage,
     DeleteMessage,
+    OpenEmojiPicker,
 }
