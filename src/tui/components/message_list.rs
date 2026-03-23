@@ -146,13 +146,32 @@ impl Component for MessageList {
                     }));
                 }
             }
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::PageDown, _) => {
                 if message_count == 0 {
                     return Ok(None);
                 }
                 self.auto_scroll.set(false);
                 let current = selected.unwrap_or(last_index);
                 self.selected_index.set(Some(current.saturating_add(10).min(last_index)));
+            }
+            (KeyCode::PageUp, _) => {
+                if message_count == 0 {
+                    return Ok(None);
+                }
+                self.auto_scroll.set(false);
+                let current = selected.unwrap_or(last_index);
+                let new_idx = current.saturating_sub(10);
+                self.selected_index.set(Some(new_idx));
+
+                if new_idx == 0 && !is_fetching {
+                    let oldest_id = buffer.messages().front().map(|m| m.id);
+                    self.is_fetching_history.set(true);
+                    return Ok(Some(Action::FetchMessages {
+                        channel_id,
+                        before: oldest_id,
+                        limit: 50,
+                    }));
+                }
             }
             // KeyCode::Char('G') arrives with SHIFT on some terminals; handle both.
             (KeyCode::Char('G'), _) => {
