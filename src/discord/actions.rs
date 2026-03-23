@@ -46,6 +46,29 @@ pub enum Action {
         /// Unicode emoji string (e.g. "👍") or custom emoji in "name:id" format.
         emoji: String,
     },
+    FetchPinnedMessages {
+        channel_id: Id<ChannelMarker>,
+    },
+    PinMessage {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+    },
+    UnpinMessage {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+    },
+    /// Search messages in a channel or guild.
+    /// NOTE: Discord's search API is not exposed by twilight-http for user accounts.
+    /// This dispatches a stub that returns empty results with a TODO for real implementation.
+    SearchMessages {
+        scope: crate::store::search::SearchScope,
+        query: String,
+    },
+    /// Navigate to a specific message in a channel.
+    NavigateToSearchResult {
+        channel_id: Id<ChannelMarker>,
+        message_id: Id<MessageMarker>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -156,6 +179,36 @@ pub async fn run_action_handler(
                     tracing::error!("failed to remove reaction: {e}");
                 }
             }
+            Action::SearchMessages { scope, query } => {
+                // TODO: Discord's message search REST endpoint is not available through
+                // twilight-http for user accounts. A real implementation would issue a
+                // raw GET request to:
+                //   /guilds/{guild_id}/messages/search?content={query}
+                //   /channels/{channel_id}/messages/search?content={query}
+                // For now we return empty results so the UI infrastructure is exercised.
+                tracing::debug!("search requested: {:?} query={:?}", scope, query);
+                let _ = event_tx.send(DiscordEvent::SearchResults { results: Vec::new() });
+            }
+            Action::NavigateToSearchResult {
+                channel_id,
+                message_id: _,
+            } => {
+                // Fetch messages for the target channel so it is loaded; the UI will
+                // set selected_channel before dispatching this action.
+                let result = http.channel_messages(channel_id).limit(50).await;
+                match result {
+                    Ok(response) => match response.models().await {
+                        Ok(messages) => {
+                            let _ = event_tx.send(DiscordEvent::MessagesLoaded {
+                                channel_id,
+                                messages,
+                            });
+                        }
+                        Err(e) => tracing::error!("failed to load messages for search nav: {e}"),
+                    },
+                    Err(e) => tracing::error!("failed to fetch channel for search nav: {e}"),
+                }
+            }
             Action::ComponentKeyAction(_) => {
                 // Handled by App before reaching here; ignore if it leaks.
             }
@@ -171,6 +224,86 @@ pub async fn run_action_handler(
                         Err(e) => tracing::error!("failed to deserialize members: {e}"),
                     },
                     Err(e) => tracing::error!("failed to fetch members: {e}"),
+                }
+            }
+            Action::FetchPinnedMessages { channel_id } => {
+                match http.pins(channel_id).await {
+                    Ok(response) => match response.model().await {
+                        Ok(pins_listing) => {
+                            let stored: Vec<crate::store::messages::StoredMessage> = pins_listing
+                                .items
+                                .into_iter()
+                                .map(|pin| {
+                                    let msg = pin.message;
+                                    crate::store::messages::StoredMessage {
+                                        id: msg.id,
+                                        author_name: msg.author.name.clone(),
+                                        author_id: msg.author.id,
+                                        content: msg.content.clone(),
+                                        timestamp: msg.timestamp.iso_8601().to_string(),
+                                        reply_to: msg.referenced_message.as_ref().map(|r| {
+                                            crate::store::messages::ReplyContext {
+                                                author_name: r.author.name.clone(),
+                                                content_preview: if r.content.len() <= 80 {
+                                                    r.content.clone()
+                                                } else {
+                                                    format!("{}...", &r.content[..80])
+                                                },
+                                            }
+                                        }),
+                                        attachments: msg
+                                            .attachments
+                                            .iter()
+                                            .map(|a| crate::store::messages::Attachment {
+                                                filename: a.filename.clone(),
+                                                size: a.size,
+                                                url: a.url.clone(),
+                                            })
+                                            .collect(),
+                                        is_edited: false,
+                                        reactions: msg
+                                            .reactions
+                                            .iter()
+                                            .map(|r| {
+                                                use twilight_model::channel::message::EmojiReactionType;
+                                                crate::store::messages::Reaction {
+                                                    emoji: match &r.emoji {
+                                                        EmojiReactionType::Unicode { name } => {
+                                                            crate::store::messages::ReactionEmoji::Unicode(name.clone())
+                                                        }
+                                                        EmojiReactionType::Custom { id, name, .. } => {
+                                                            crate::store::messages::ReactionEmoji::Custom {
+                                                                id: id.get(),
+                                                                name: name.clone().unwrap_or_default(),
+                                                            }
+                                                        }
+                                                    },
+                                                    count: r.count as u32,
+                                                    me: r.me,
+                                                }
+                                            })
+                                            .collect(),
+                                    }
+                                })
+                                .collect();
+                            let _ = event_tx.send(DiscordEvent::PinnedMessagesLoaded {
+                                channel_id,
+                                messages: stored,
+                            });
+                        }
+                        Err(e) => tracing::error!("failed to deserialize pinned messages: {e}"),
+                    },
+                    Err(e) => tracing::error!("failed to fetch pinned messages: {e}"),
+                }
+            }
+            Action::PinMessage { channel_id, message_id } => {
+                if let Err(e) = http.create_pin(channel_id, message_id).await {
+                    tracing::error!("failed to pin message: {e}");
+                }
+            }
+            Action::UnpinMessage { channel_id, message_id } => {
+                if let Err(e) = http.delete_pin(channel_id, message_id).await {
+                    tracing::error!("failed to unpin message: {e}");
                 }
             }
         }

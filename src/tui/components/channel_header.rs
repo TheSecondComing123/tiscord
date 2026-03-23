@@ -36,6 +36,18 @@ impl Component for ChannelHeader {
             }
         }
 
+        // Show pin count if there are pinned messages loaded for this channel.
+        if let Some(channel_id) = store.ui.selected_channel {
+            if let Some(Some(pins)) = store.pinned_messages.get(&channel_id) {
+                if !pins.is_empty() {
+                    spans.push(Span::styled(
+                        format!("  \u{1f4cc} {}", pins.len()),
+                        Style::default().fg(theme::TEXT_MUTED),
+                    ));
+                }
+            }
+        }
+
         let line = Line::from(spans);
 
         let block = Block::default()

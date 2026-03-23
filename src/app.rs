@@ -94,6 +94,7 @@ impl App {
                 let member_sidebar_ref = &self.member_sidebar;
                 let command_palette_ref = &self.command_palette;
                 let emoji_picker_ref = &self.emoji_picker;
+                let pins_overlay_ref = &self.pins_overlay;
                 let error_ref = &self.error_message;
 
                 terminal.draw(|frame| {
@@ -153,6 +154,11 @@ impl App {
                     // Overlay: emoji picker
                     if emoji_picker_ref.visible {
                         emoji_picker_ref.render(frame, area, &store);
+                    }
+
+                    // Overlay: pins overlay
+                    if pins_overlay_ref.is_visible() {
+                        pins_overlay_ref.render(frame, area, &store);
                     }
                 })?;
             }

@@ -1,6 +1,7 @@
 pub mod guilds;
 pub mod messages;
 pub mod notifications;
+pub mod search;
 pub mod state;
 pub mod typing;
 pub mod voice;
@@ -51,6 +52,9 @@ pub struct Store {
     pub dm_channels: Vec<DmChannel>,
     pub typing: typing::TypingState,
     pub voice: voice::VoiceState,
+    pub search: search::SearchState,
+    /// Cache of pinned messages per channel. None means cache is invalid/not yet loaded.
+    pub pinned_messages: HashMap<Id<ChannelMarker>, Option<Vec<messages::StoredMessage>>>,
 }
 
 impl Store {
@@ -66,6 +70,8 @@ impl Store {
             dm_channels: Vec::new(),
             typing: typing::TypingState::default(),
             voice: voice::VoiceState::default(),
+            search: search::SearchState::default(),
+            pinned_messages: HashMap::new(),
         }
     }
 
@@ -406,6 +412,19 @@ impl Store {
                 if let Some(buf) = self.messages.get_mut(&channel_id) {
                     buf.remove_all_reactions(message_id);
                 }
+            }
+            DiscordEvent::ChannelPinsUpdate { channel_id } => {
+                // Invalidate the pin cache for this channel so the next open re-fetches.
+                self.pinned_messages.insert(channel_id, None);
+                tracing::debug!("channel pins updated for {channel_id}");
+            }
+            DiscordEvent::PinnedMessagesLoaded { channel_id, messages } => {
+                self.pinned_messages.insert(channel_id, Some(messages));
+                tracing::debug!("pinned messages loaded for channel {channel_id}");
+            }
+            DiscordEvent::SearchResults { results } => {
+                self.search.results = results;
+                self.search.loading = false;
             }
             DiscordEvent::VoiceStateUpdate { channel_id, user_id, display_name, self_mute, self_deaf } => {
                 let name = if display_name.is_empty() {
