@@ -11,12 +11,14 @@ use crate::utils::time::format_timestamp;
 /// Order: optional reply quote, header, content lines, attachments, optional thread indicator, reactions.
 ///
 /// `thread` is optional thread info if this message has an associated thread.
+/// `supports_images` controls whether image attachments show an image indicator vs. plain file indicator.
 pub fn render_message(msg: &StoredMessage, _width: u16) -> Vec<Line<'static>> {
-    render_message_with_thread(msg, _width, None)
+    render_message_with_thread(msg, _width, None, false)
 }
 
-/// Like `render_message` but also accepts optional thread info to display a thread indicator.
-pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Option<&ThreadInfo>) -> Vec<Line<'static>> {
+/// Like `render_message` but also accepts optional thread info to display a thread indicator
+/// and a flag indicating whether the terminal supports inline image rendering.
+pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Option<&ThreadInfo>, supports_images: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // ── reply context ────────────────────────────────────────────────────────
@@ -63,7 +65,11 @@ pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Opti
     // ── attachments ──────────────────────────────────────────────────────────
     for attachment in &msg.attachments {
         let size_str = format_size(attachment.size);
-        let text = format!("[file: {} ({})]", attachment.filename, size_str);
+        let text = if supports_images && crate::tui::image_renderer::is_image_file(&attachment.filename) {
+            format!("[\u{1f5bc} {} ({})]", attachment.filename, size_str)
+        } else {
+            format!("[file: {} ({})]", attachment.filename, size_str)
+        };
         lines.push(Line::from(Span::styled(text, theme::secondary_text())));
     }
 

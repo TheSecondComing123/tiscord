@@ -2,6 +2,23 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImagesConfig {
+    #[serde(default = "default_images_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_max_width")]
+    pub max_width: u16,
+}
+
+fn default_images_enabled() -> bool { true }
+fn default_max_width() -> u16 { 40 }
+
+impl Default for ImagesConfig {
+    fn default() -> Self {
+        Self { enabled: default_images_enabled(), max_width: default_max_width() }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TimestampMode {
@@ -91,6 +108,8 @@ pub struct Config {
     pub notifications: NotificationConfig,
     #[serde(default)]
     pub reactions: ReactionsConfig,
+    #[serde(default)]
+    pub images: ImagesConfig,
 }
 
 impl Default for Config {
@@ -99,6 +118,7 @@ impl Default for Config {
             ui: UiConfig::default(),
             notifications: NotificationConfig::default(),
             reactions: ReactionsConfig::default(),
+            images: ImagesConfig::default(),
         }
     }
 }
