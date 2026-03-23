@@ -12,10 +12,17 @@ use twilight_model::id::Id;
 use crate::discord::events::DiscordEvent;
 
 #[derive(Debug, Clone)]
+pub struct CustomStatus {
+    pub emoji: Option<String>,
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct MemberInfo {
     pub id: Id<UserMarker>,
     pub name: String,
     pub status: MemberStatus,
+    pub custom_status: Option<CustomStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,7 +338,13 @@ impl Store {
                 };
                 self.typing.add_typing(channel_id, user_id, name);
             }
-            DiscordEvent::PresenceUpdate => {}
+            DiscordEvent::PresenceUpdate { user_id, guild_id, custom_status } => {
+                if let Some(members) = self.members.get_mut(&guild_id) {
+                    if let Some(member) = members.iter_mut().find(|m| m.id == user_id) {
+                        member.custom_status = custom_status;
+                    }
+                }
+            }
         }
     }
 }
@@ -354,6 +367,7 @@ fn members_to_infos(members: Vec<twilight_model::guild::Member>) -> Vec<MemberIn
             id: m.user.id,
             name: m.nick.clone().unwrap_or_else(|| m.user.name.clone()),
             status: MemberStatus::Unknown,
+            custom_status: None,
         })
         .collect()
 }

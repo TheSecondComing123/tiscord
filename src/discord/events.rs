@@ -27,7 +27,11 @@ pub enum DiscordEvent {
         user_id: Id<UserMarker>,
         display_name: String,
     },
-    PresenceUpdate,
+    PresenceUpdate {
+        user_id: Id<UserMarker>,
+        guild_id: Id<GuildMarker>,
+        custom_status: Option<crate::store::CustomStatus>,
+    },
     MemberChunk {
         guild_id: Id<GuildMarker>,
         members: Vec<twilight_model::guild::Member>,
@@ -90,6 +94,19 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
             user_id: ts.user_id,
             display_name: String::new(), // resolved in store from member cache
         }),
+        Event::PresenceUpdate(e) => {
+            let custom_status = e.activities.iter()
+                .find(|a| a.kind == twilight_model::gateway::presence::ActivityType::Custom)
+                .map(|a| crate::store::CustomStatus {
+                    emoji: a.emoji.as_ref().map(|em| em.name.clone()),
+                    text: a.state.clone(),
+                });
+            Some(DiscordEvent::PresenceUpdate {
+                user_id: e.user.id(),
+                guild_id: e.guild_id,
+                custom_status,
+            })
+        },
         _ => None,
     }
 }
