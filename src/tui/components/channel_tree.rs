@@ -58,8 +58,9 @@ impl Component for ChannelTree {
                 }
             }
             KeyCode::Enter => {
-                // Enter moves focus to message list
-                store.ui.focus = FocusTarget::MessageList;
+                // Enter moves focus to message input, ready to type
+                store.ui.focus = FocusTarget::MessageInput;
+                store.ui.input_mode = crate::store::state::InputMode::Insert;
                 return Ok(None);
             }
             _ => false,
