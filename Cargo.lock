@@ -2367,8 +2367,6 @@ dependencies = [
 [[package]]
 name = "twilight-gateway"
 version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59267541c31f888c1587da5e7cbab182ae6efd98faedd9ea2e35a4eef43ff204"
 dependencies = [
  "bitflags 2.11.0",
  "fastrand",
@@ -2398,8 +2396,6 @@ dependencies = [
 [[package]]
 name = "twilight-http"
 version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05b868001d7bfb953732b3f1cd92f63cb88cd2ea902f590b1d084c66aea60e48"
 dependencies = [
  "brotli-decompressor",
  "fastrand",

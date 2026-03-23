@@ -2,12 +2,6 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
 use twilight_model::id::Id;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputMode {
-    Normal,
-    Insert,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusTarget {
     ServerList,
     ChannelTree,
@@ -29,7 +23,6 @@ pub enum ConnectionStatus {
 pub struct UiState {
     pub selected_guild: Option<Id<GuildMarker>>,
     pub selected_channel: Option<Id<ChannelMarker>>,
-    pub input_mode: InputMode,
     pub focus: FocusTarget,
     pub member_sidebar_visible: bool,
     pub message_scroll_offset: usize,
@@ -52,7 +45,6 @@ impl Default for UiState {
         Self {
             selected_guild: None,
             selected_channel: None,
-            input_mode: InputMode::Normal,
             focus: FocusTarget::ServerList,
             member_sidebar_visible: false,
             message_scroll_offset: 0,

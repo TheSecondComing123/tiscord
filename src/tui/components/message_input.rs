@@ -86,14 +86,51 @@ impl Component for MessageInput {
             return Ok(None);
         }
 
+        // Ctrl shortcuts while typing
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('u') => {
+                    // Page up in messages while typing
+                    store.ui.message_scroll_offset = store.ui.message_scroll_offset.saturating_add(10);
+                    return Ok(None);
+                }
+                KeyCode::Char('d') => {
+                    // Page down in messages while typing
+                    store.ui.message_scroll_offset = store.ui.message_scroll_offset.saturating_sub(10);
+                    return Ok(None);
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
+            // Esc -> back to channel tree, cancel reply/edit
+            KeyCode::Esc => {
+                store.ui.focus = FocusTarget::ChannelTree;
+                store.ui.reply_to = None;
+                store.ui.editing_message = None;
+                self.clear();
+            }
+
+            // Left arrow at cursor position 0 -> back to channel tree
+            KeyCode::Left if self.cursor_pos == 0 && key.modifiers == KeyModifiers::NONE => {
+                store.ui.focus = FocusTarget::ChannelTree;
+            }
+
+            // Left arrow (cursor not at 0)
+            KeyCode::Left => {
+                if self.cursor_pos > 0 {
+                    self.cursor_pos -= 1;
+                }
+            }
+
             // Printable characters
             KeyCode::Char(ch) => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) && ch == '\n' {
                     // Shift+Enter - but crossterm represents Shift+Enter differently;
                     // handle it in the Enter branch instead.
                     self.insert_char('\n');
-                } else {
+                } else if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT {
                     self.insert_char(ch);
                 }
             }
@@ -147,12 +184,6 @@ impl Component for MessageInput {
 
             KeyCode::Delete => {
                 self.delete_at();
-            }
-
-            KeyCode::Left => {
-                if self.cursor_pos > 0 {
-                    self.cursor_pos -= 1;
-                }
             }
 
             KeyCode::Right => {

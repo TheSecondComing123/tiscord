@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders};
 use tokio::sync::mpsc;
@@ -10,14 +10,14 @@ use tokio::sync::mpsc;
 use crate::config::Config;
 use crate::discord::actions::Action;
 use crate::discord::events::DiscordEvent;
-use crate::store::state::{ConnectionStatus, FocusTarget, InputMode, ReplyTarget};
+use crate::store::state::{ConnectionStatus, FocusTarget, ReplyTarget};
 use crate::store::Store;
 use crate::tui::component::Component;
 use crate::tui::components::member_sidebar::MemberSidebar;
 use crate::tui::components::message_pane::MessagePane;
 use crate::tui::components::overlays::command_palette::CommandPalette;
 use crate::tui::components::sidebar::ServerChannelSidebar;
-use crate::tui::keybindings::{KeyAction, KeyDispatcher};
+use crate::tui::keybindings::KeyAction;
 use crate::tui::terminal::Tui;
 use crate::tui::theme;
 
@@ -27,7 +27,6 @@ pub struct App {
     discord_event_rx: mpsc::UnboundedReceiver<DiscordEvent>,
     config: Config,
     should_quit: bool,
-    key_dispatcher: KeyDispatcher,
     sidebar: ServerChannelSidebar,
     message_pane: MessagePane,
     member_sidebar: MemberSidebar,
@@ -48,7 +47,6 @@ impl App {
             discord_event_rx,
             config,
             should_quit: false,
-            key_dispatcher: KeyDispatcher::new(),
             sidebar: ServerChannelSidebar::new(),
             message_pane: MessagePane::new(),
             member_sidebar: MemberSidebar::new(),
@@ -162,13 +160,13 @@ impl App {
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
-        let (mode, focus) = {
+        let focus = {
             let store = self.store.read().unwrap();
-            (store.ui.input_mode, store.ui.focus)
+            store.ui.focus
         };
 
         // When the command palette is focused, route all keys to it directly
-        // before the normal dispatcher has a chance to intercept them.
+        // before global shortcuts can intercept them.
         if focus == FocusTarget::CommandPalette {
             let mut store = self.store.write().unwrap();
             let result = self.command_palette.handle_key_event(key, &mut store)?;
@@ -178,193 +176,131 @@ impl App {
             return Ok(());
         }
 
-        let action = self.key_dispatcher.dispatch(key, mode, focus);
-
-        match action {
-            KeyAction::Quit => {
-                self.should_quit = true;
-            }
-
-            KeyAction::FocusSidebar => {
-                let mut store = self.store.write().unwrap();
-                store.ui.focus = FocusTarget::ServerList;
-                store.ui.input_mode = InputMode::Normal;
-            }
-
-            KeyAction::ToggleMemberSidebar => {
-                let mut store = self.store.write().unwrap();
-                store.ui.member_sidebar_visible = !store.ui.member_sidebar_visible;
-                if store.ui.member_sidebar_visible {
-                    store.ui.focus = FocusTarget::MemberSidebar;
-                } else if store.ui.focus == FocusTarget::MemberSidebar {
-                    store.ui.focus = FocusTarget::MessageList;
+        // Global shortcuts (Ctrl+key)
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('c') => {
+                    self.should_quit = true;
+                    return Ok(());
                 }
-            }
-
-            KeyAction::EnterInsertMode => {
-                let mut store = self.store.write().unwrap();
-                store.ui.focus = FocusTarget::MessageInput;
-                store.ui.input_mode = InputMode::Insert;
-            }
-
-            KeyAction::ExitInsertMode => {
-                let mut store = self.store.write().unwrap();
-                store.ui.focus = FocusTarget::MessageList;
-                store.ui.input_mode = InputMode::Normal;
-                store.ui.reply_to = None;
-                store.ui.editing_message = None;
-                self.message_pane.message_input.clear();
-            }
-
-            KeyAction::CycleFocusForward => {
-                let mut store = self.store.write().unwrap();
-                store.ui.focus = cycle_focus_forward(store.ui.focus);
-            }
-
-            KeyAction::CycleFocusBackward => {
-                let mut store = self.store.write().unwrap();
-                store.ui.focus = cycle_focus_backward(store.ui.focus);
-            }
-
-            KeyAction::MoveUp | KeyAction::MoveDown | KeyAction::Select | KeyAction::Back
-            | KeyAction::JumpToTop | KeyAction::JumpToBottom | KeyAction::PageUp
-            | KeyAction::PageDown => {
-                let mut store = self.store.write().unwrap();
-                let result = match store.ui.focus {
-                    FocusTarget::ServerList | FocusTarget::ChannelTree => {
-                        self.sidebar.handle_key_event(key, &mut store)?
-                    }
-                    FocusTarget::MessageList => {
-                        self.message_pane.message_list.handle_key_event(key, &mut store)?
-                    }
-                    FocusTarget::MemberSidebar => {
-                        self.member_sidebar.handle_key_event(key, &mut store)?
-                    }
-                    _ => None,
-                };
-                if let Some(action) = result {
-                    let _ = self.action_tx.send(action);
-                }
-            }
-
-            KeyAction::SendMessage => {
-                // SendMessage comes from the KeyDispatcher in Insert mode (Enter key).
-                // Route to the message_input to handle the actual send logic.
-                let mut store = self.store.write().unwrap();
-                let result = self.message_pane.message_input.handle_key_event(key, &mut store)?;
-                if let Some(action) = result {
-                    let _ = self.action_tx.send(action);
-                }
-                // After sending, exit insert mode
-                store.ui.focus = FocusTarget::MessageList;
-                store.ui.input_mode = InputMode::Normal;
-            }
-
-            KeyAction::InsertNewline => {
-                // Shift+Enter in insert mode - pass through to input
-                let mut store = self.store.write().unwrap();
-                let result = self.message_pane.message_input.handle_key_event(key, &mut store)?;
-                if let Some(action) = result {
-                    let _ = self.action_tx.send(action);
-                }
-            }
-
-            KeyAction::Unhandled(raw_key) => {
-                // In insert mode, pass unhandled keys to the focused component
-                let mut store = self.store.write().unwrap();
-                let result = match store.ui.focus {
-                    FocusTarget::MessageInput => {
-                        self.message_pane.message_input.handle_key_event(raw_key, &mut store)?
-                    }
-                    FocusTarget::MessageList => {
-                        self.message_pane.message_list.handle_key_event(raw_key, &mut store)?
-                    }
-                    FocusTarget::ServerList | FocusTarget::ChannelTree => {
-                        self.sidebar.handle_key_event(raw_key, &mut store)?
-                    }
-                    FocusTarget::MemberSidebar => {
-                        self.member_sidebar.handle_key_event(raw_key, &mut store)?
-                    }
-                    _ => None,
-                };
-                if let Some(action) = result {
-                    let _ = self.action_tx.send(action);
-                }
-            }
-
-            KeyAction::Reply => {
-                let store_read = self.store.read().unwrap();
-                let msg_data = self
-                    .message_pane
-                    .message_list
-                    .get_selected_message(&store_read)
-                    .map(|m| (m.id, m.author_name.clone(), m.content.chars().take(80).collect::<String>()));
-                drop(store_read);
-
-                if let Some((message_id, author_name, content_preview)) = msg_data {
+                KeyCode::Char('k') => {
                     let mut store = self.store.write().unwrap();
-                    store.ui.reply_to = Some(ReplyTarget {
-                        message_id,
-                        author_name,
-                        content_preview,
-                    });
-                    store.ui.focus = FocusTarget::MessageInput;
-                    store.ui.input_mode = InputMode::Insert;
+                    self.command_palette.open(&store);
+                    store.ui.focus = FocusTarget::CommandPalette;
+                    return Ok(());
                 }
-            }
-
-            KeyAction::EditMessage => {
-                let store_read = self.store.read().unwrap();
-                let current_user_id = store_read.current_user_id;
-                let msg_data = self
-                    .message_pane
-                    .message_list
-                    .get_selected_message(&store_read)
-                    .filter(|m| Some(m.author_id) == current_user_id)
-                    .map(|m| (m.id, m.content.clone()));
-                drop(store_read);
-
-                if let Some((message_id, content)) = msg_data {
+                KeyCode::Char('m') => {
                     let mut store = self.store.write().unwrap();
-                    store.ui.editing_message = Some(message_id);
-                    store.ui.reply_to = None;
-                    store.ui.focus = FocusTarget::MessageInput;
-                    store.ui.input_mode = InputMode::Insert;
-                    drop(store);
-                    self.message_pane.message_input.set_content(content);
+                    store.ui.member_sidebar_visible = !store.ui.member_sidebar_visible;
+                    if store.ui.member_sidebar_visible {
+                        store.ui.focus = FocusTarget::MemberSidebar;
+                    } else if store.ui.focus == FocusTarget::MemberSidebar {
+                        store.ui.focus = FocusTarget::MessageList;
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+
+        // Tab / Shift+Tab - cycle focus (except when typing in MessageInput)
+        if focus != FocusTarget::MessageInput {
+            match key.code {
+                KeyCode::Tab if key.modifiers == KeyModifiers::NONE => {
+                    let mut store = self.store.write().unwrap();
+                    store.ui.focus = cycle_focus_forward(store.ui.focus);
+                    return Ok(());
+                }
+                KeyCode::BackTab => {
+                    let mut store = self.store.write().unwrap();
+                    store.ui.focus = cycle_focus_backward(store.ui.focus);
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+
+        // Route to the focused component
+        let mut store = self.store.write().unwrap();
+        let result = match store.ui.focus {
+            FocusTarget::ServerList | FocusTarget::ChannelTree => {
+                self.sidebar.handle_key_event(key, &mut store)?
+            }
+            FocusTarget::MessageList => {
+                self.message_pane.message_list.handle_key_event(key, &mut store)?
+            }
+            FocusTarget::MessageInput => {
+                self.message_pane.message_input.handle_key_event(key, &mut store)?
+            }
+            FocusTarget::MemberSidebar => {
+                self.member_sidebar.handle_key_event(key, &mut store)?
+            }
+            FocusTarget::CommandPalette => {
+                // Already handled above, but satisfy the match
+                None
+            }
+        };
+
+        // Handle cross-component actions returned by components
+        if let Some(action) = result {
+            match action {
+                Action::ComponentKeyAction(key_action) => {
+                    match key_action {
+                        KeyAction::Reply => {
+                            let msg_data = self
+                                .message_pane
+                                .message_list
+                                .get_selected_message(&store)
+                                .map(|m| (m.id, m.author_name.clone(), m.content.chars().take(80).collect::<String>()));
+
+                            if let Some((message_id, author_name, content_preview)) = msg_data {
+                                store.ui.reply_to = Some(ReplyTarget {
+                                    message_id,
+                                    author_name,
+                                    content_preview,
+                                });
+                                store.ui.focus = FocusTarget::MessageInput;
+                            }
+                        }
+                        KeyAction::EditMessage => {
+                            let current_user_id = store.current_user_id;
+                            let msg_data = self
+                                .message_pane
+                                .message_list
+                                .get_selected_message(&store)
+                                .filter(|m| Some(m.author_id) == current_user_id)
+                                .map(|m| (m.id, m.content.clone()));
+
+                            if let Some((message_id, content)) = msg_data {
+                                store.ui.editing_message = Some(message_id);
+                                store.ui.reply_to = None;
+                                store.ui.focus = FocusTarget::MessageInput;
+                                drop(store);
+                                self.message_pane.message_input.set_content(content);
+                                return Ok(());
+                            }
+                        }
+                        KeyAction::DeleteMessage => {
+                            let current_user_id = store.current_user_id;
+                            let channel_id = store.ui.selected_channel;
+                            let msg_data = self
+                                .message_pane
+                                .message_list
+                                .get_selected_message(&store)
+                                .filter(|m| Some(m.author_id) == current_user_id)
+                                .and_then(|m| channel_id.map(|ch| (ch, m.id)));
+
+                            if let Some((channel_id, message_id)) = msg_data {
+                                let _ = self.action_tx.send(Action::DeleteMessage { channel_id, message_id });
+                            }
+                        }
+                    }
+                }
+                // Regular discord actions (SendMessage, FetchMessages, etc.)
+                other => {
+                    let _ = self.action_tx.send(other);
                 }
             }
-
-            KeyAction::DeleteMessage => {
-                let store_read = self.store.read().unwrap();
-                let current_user_id = store_read.current_user_id;
-                let channel_id = store_read.ui.selected_channel;
-                let msg_data = self
-                    .message_pane
-                    .message_list
-                    .get_selected_message(&store_read)
-                    .filter(|m| Some(m.author_id) == current_user_id)
-                    .and_then(|m| channel_id.map(|ch| (ch, m.id)));
-                drop(store_read);
-
-                if let Some((channel_id, message_id)) = msg_data {
-                    let _ = self.action_tx.send(Action::DeleteMessage { channel_id, message_id });
-                }
-            }
-
-            KeyAction::OpenCommandPalette => {
-                let mut store = self.store.write().unwrap();
-                self.command_palette.open(&store);
-                store.ui.focus = FocusTarget::CommandPalette;
-                store.ui.input_mode = InputMode::Insert;
-            }
-
-            // Actions not yet implemented - ignore for now
-            KeyAction::AddReaction
-            | KeyAction::YankMessage
-            | KeyAction::OpenSearch
-            | KeyAction::NextSearchResult
-            | KeyAction::PrevSearchResult => {}
         }
 
         Ok(())
@@ -433,14 +369,18 @@ fn render_status_bar(
         Span::styled(center_text, status_bg.fg(theme::TEXT_SECONDARY))
     };
 
-    // Right section: input mode
-    let (mode_text, mode_color) = match store.ui.input_mode {
-        InputMode::Normal => ("NORMAL", theme::ONLINE),
-        InputMode::Insert => ("INSERT", theme::ACCENT),
+    // Right section: focused panel
+    let (focus_text, focus_color) = match store.ui.focus {
+        FocusTarget::ServerList => ("SERVERS", theme::TEXT_SECONDARY),
+        FocusTarget::ChannelTree => ("CHANNELS", theme::TEXT_SECONDARY),
+        FocusTarget::MessageList => ("MESSAGES", theme::ONLINE),
+        FocusTarget::MessageInput => ("INPUT", theme::ACCENT),
+        FocusTarget::MemberSidebar => ("MEMBERS", theme::TEXT_SECONDARY),
+        FocusTarget::CommandPalette => ("PALETTE", theme::ACCENT),
     };
     let right_span = Span::styled(
-        format!(" {mode_text} "),
-        status_bg.fg(mode_color),
+        format!(" {focus_text} "),
+        status_bg.fg(focus_color),
     );
 
     // Split the status bar into three equal columns.
@@ -475,17 +415,19 @@ fn render_status_bar(
 fn cycle_focus_forward(current: FocusTarget) -> FocusTarget {
     match current {
         FocusTarget::ServerList => FocusTarget::ChannelTree,
-        FocusTarget::ChannelTree => FocusTarget::MessageList,
-        FocusTarget::MessageList => FocusTarget::ServerList,
+        FocusTarget::ChannelTree => FocusTarget::MessageInput,
+        FocusTarget::MessageList => FocusTarget::MessageInput,
+        FocusTarget::MessageInput => FocusTarget::ServerList,
         other => other,
     }
 }
 
 fn cycle_focus_backward(current: FocusTarget) -> FocusTarget {
     match current {
-        FocusTarget::ServerList => FocusTarget::MessageList,
+        FocusTarget::ServerList => FocusTarget::MessageInput,
         FocusTarget::ChannelTree => FocusTarget::ServerList,
         FocusTarget::MessageList => FocusTarget::ChannelTree,
+        FocusTarget::MessageInput => FocusTarget::ChannelTree,
         other => other,
     }
 }

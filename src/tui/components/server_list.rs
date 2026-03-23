@@ -68,11 +68,12 @@ impl Component for ServerList {
                     return Ok(action);
                 }
             }
-            KeyCode::Enter => {
-                // Enter moves focus to channel tree
-                if !store.ui.dm_mode {
-                    store.ui.focus = FocusTarget::ChannelTree;
-                }
+            KeyCode::Enter | KeyCode::Right => {
+                // Enter/Right moves focus to channel tree
+                store.ui.focus = FocusTarget::ChannelTree;
+            }
+            KeyCode::Esc | KeyCode::Left => {
+                // Already at leftmost panel - no-op
             }
             _ => {}
         }

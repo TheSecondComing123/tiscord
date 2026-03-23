@@ -20,10 +20,18 @@ async fn main() -> anyhow::Result<()> {
     let data_dir = Config::data_dir();
     std::fs::create_dir_all(&data_dir)?;
     let file_appender = tracing_appender::rolling::daily(&data_dir, "tiscord.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     tracing_subscriber::fmt()
-        .with_writer(file_appender)
-        .with_env_filter("tiscord=debug")
+        .with_writer(non_blocking)
+        .with_env_filter("tiscord=debug,twilight_gateway=debug")
         .init();
+
+    // Check for --clear-token flag
+    if std::env::args().any(|a| a == "--clear-token") {
+        auth::clear_token()?;
+        eprintln!("Token cleared.");
+        return Ok(());
+    }
 
     let token = auth::get_token()?;
 

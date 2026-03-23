@@ -4,6 +4,7 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
 use twilight_model::id::Id;
 
 use super::events::DiscordEvent;
+use crate::tui::keybindings::KeyAction;
 
 #[derive(Debug, Clone)]
 pub enum Action {
@@ -32,6 +33,9 @@ pub enum Action {
     FetchGuildChannels {
         guild_id: Id<GuildMarker>,
     },
+    /// Internal action used by components to request cross-component coordination.
+    /// Intercepted by App before reaching the action handler.
+    ComponentKeyAction(KeyAction),
 }
 
 pub async fn run_action_handler(
@@ -115,6 +119,9 @@ pub async fn run_action_handler(
                     },
                     Err(e) => tracing::error!("failed to fetch channels: {e}"),
                 }
+            }
+            Action::ComponentKeyAction(_) => {
+                // Handled by App before reaching here; ignore if it leaks.
             }
             Action::FetchGuildMembers { guild_id } => {
                 match http.guild_members(guild_id).limit(100).await {

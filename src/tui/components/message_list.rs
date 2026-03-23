@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -11,7 +12,10 @@ use crate::store::messages::StoredMessage;
 use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
 use crate::tui::components::message::render_message;
+use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
+
+const CHORD_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub struct MessageList {
     // Wrapped in Cell so they can be mutated in render(&self).
@@ -20,6 +24,7 @@ pub struct MessageList {
     is_fetching_history: Cell<bool>,
     last_message_count: Cell<usize>,
     last_channel_id: Cell<Option<u64>>,
+    pending_chord: Option<(KeyCode, Instant)>,
 }
 
 impl MessageList {
@@ -30,6 +35,7 @@ impl MessageList {
             is_fetching_history: Cell::new(false),
             last_message_count: Cell::new(0),
             last_channel_id: Cell::new(None),
+            pending_chord: None,
         }
     }
 
@@ -66,23 +72,46 @@ impl Component for MessageList {
         };
 
         let message_count = buffer.len();
-
-        if message_count == 0 {
-            return Ok(None);
-        }
-
-        let last_index = message_count - 1;
+        let last_index = if message_count > 0 { message_count - 1 } else { 0 };
         let selected = self.selected_index.get();
-        let auto_scroll = self.auto_scroll.get();
         let is_fetching = self.is_fetching_history.get();
 
+        // Handle pending chord
+        if let Some((chord_key, chord_time)) = self.pending_chord.take() {
+            if chord_time.elapsed() < CHORD_TIMEOUT
+                && chord_key == KeyCode::Char('g')
+                && key.code == KeyCode::Char('g')
+            {
+                self.selected_index.set(Some(0));
+                self.auto_scroll.set(false);
+                if !is_fetching {
+                    let oldest_id = buffer.messages().front().map(|m| m.id);
+                    self.is_fetching_history.set(true);
+                    return Ok(Some(Action::FetchMessages {
+                        channel_id,
+                        before: oldest_id,
+                        limit: 50,
+                    }));
+                }
+                return Ok(None);
+            }
+            // Expired or unmatched chord - fall through and process key normally
+        }
+
         match (key.code, key.modifiers) {
-            (KeyCode::Char('j'), KeyModifiers::NONE) => {
+            // Navigation
+            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+                if message_count == 0 {
+                    return Ok(None);
+                }
                 self.auto_scroll.set(false);
                 let current = selected.unwrap_or(last_index);
                 self.selected_index.set(Some(current.saturating_add(1).min(last_index)));
             }
-            (KeyCode::Char('k'), KeyModifiers::NONE) => {
+            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+                if message_count == 0 {
+                    return Ok(None);
+                }
                 self.auto_scroll.set(false);
                 let current = selected.unwrap_or(last_index);
                 let new_idx = current.saturating_sub(1);
@@ -99,6 +128,9 @@ impl Component for MessageList {
                 }
             }
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                if message_count == 0 {
+                    return Ok(None);
+                }
                 self.auto_scroll.set(false);
                 let current = selected.unwrap_or(last_index);
                 let new_idx = current.saturating_sub(10);
@@ -115,16 +147,46 @@ impl Component for MessageList {
                 }
             }
             (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                if message_count == 0 {
+                    return Ok(None);
+                }
                 self.auto_scroll.set(false);
                 let current = selected.unwrap_or(last_index);
                 self.selected_index.set(Some(current.saturating_add(10).min(last_index)));
             }
             // KeyCode::Char('G') arrives with SHIFT on some terminals; handle both.
             (KeyCode::Char('G'), _) => {
-                self.selected_index.set(Some(last_index));
-                self.auto_scroll.set(true);
-                let _ = auto_scroll; // suppress unused warning
+                if message_count > 0 {
+                    self.selected_index.set(Some(last_index));
+                    self.auto_scroll.set(true);
+                }
             }
+            // Start gg chord
+            (KeyCode::Char('g'), KeyModifiers::NONE) => {
+                self.pending_chord = Some((KeyCode::Char('g'), Instant::now()));
+            }
+
+            // Focus transitions
+            (KeyCode::Enter | KeyCode::Char('i'), KeyModifiers::NONE) => {
+                // Go to message input
+                store.ui.focus = FocusTarget::MessageInput;
+            }
+            (KeyCode::Esc | KeyCode::Left, KeyModifiers::NONE) => {
+                // Back to channel tree
+                store.ui.focus = FocusTarget::ChannelTree;
+            }
+
+            // Message actions (return ComponentKeyAction for App to handle)
+            (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::Reply)));
+            }
+            (KeyCode::Char('e'), KeyModifiers::NONE) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::EditMessage)));
+            }
+            (KeyCode::Char('d'), KeyModifiers::NONE) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::DeleteMessage)));
+            }
+
             _ => {}
         }
 

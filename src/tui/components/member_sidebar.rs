@@ -31,6 +31,14 @@ impl Component for MemberSidebar {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
             }
+            KeyCode::Esc | KeyCode::Left => {
+                // Back to message list
+                store.ui.focus = FocusTarget::MessageList;
+            }
+            KeyCode::Enter | KeyCode::Right => {
+                // Go to message input
+                store.ui.focus = FocusTarget::MessageInput;
+            }
             _ => {}
         }
         Ok(None)

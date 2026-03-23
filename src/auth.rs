@@ -26,9 +26,10 @@ fn prompt_token() -> Result<String> {
     eprintln!("No Discord token found. Enter your token:");
     let mut token = String::new();
     std::io::stdin().read_line(&mut token)?;
-    let token = token.trim().to_string();
+    let token = token.trim().replace('\r', "").replace('\n', "");
     if token.is_empty() {
         anyhow::bail!("token cannot be empty");
     }
+    eprintln!("Token stored ({} chars)", token.len());
     Ok(token)
 }

@@ -235,7 +235,6 @@ impl Component for CommandPalette {
             KeyCode::Esc => {
                 self.close();
                 store.ui.focus = FocusTarget::MessageList;
-                store.ui.input_mode = crate::store::state::InputMode::Normal;
             }
 
             KeyCode::Up => {
@@ -249,7 +248,6 @@ impl Component for CommandPalette {
             KeyCode::Enter => {
                 let action = self.select_current(store);
                 store.ui.focus = FocusTarget::MessageList;
-                store.ui.input_mode = crate::store::state::InputMode::Normal;
                 return Ok(action);
             }
 

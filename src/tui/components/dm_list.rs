@@ -39,17 +39,22 @@ impl Component for DMList {
                     self.selected_index -= 1;
                 }
             }
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Right => {
                 if let Some(dm) = store.dm_channels.get(self.selected_index) {
                     let channel_id = dm.channel_id;
                     store.ui.selected_channel = Some(channel_id);
                     store.notifications.mark_read(channel_id);
+                    store.ui.focus = FocusTarget::MessageInput;
                     return Ok(Some(Action::FetchMessages {
                         channel_id,
                         before: None,
                         limit: 50,
                     }));
                 }
+            }
+            KeyCode::Esc | KeyCode::Left => {
+                // Back to server list
+                store.ui.focus = FocusTarget::ServerList;
             }
             _ => {}
         }
