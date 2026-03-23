@@ -37,7 +37,7 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         .or_else(|| user.get("username").and_then(|v| v.as_str()))?
         .to_string();
 
-    let guilds: Vec<(Id<twilight_model::id::marker::GuildMarker>, String)> = d
+    let guilds: Vec<super::events::ReadyGuild> = d
         .get("guilds")
         .and_then(|g| g.as_array())
         .map(|arr| {
@@ -47,7 +47,7 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
                     if g.get("guild_ids").is_some() {
                         return None;
                     }
-                    let id = g.get("id")?.as_str()?.parse().ok()?;
+                    let id: u64 = g.get("id")?.as_str()?.parse().ok()?;
                     let name = g
                         .get("properties")
                         .and_then(|p| p.get("name"))
@@ -55,7 +55,47 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
                         .or_else(|| g.get("name").and_then(|n| n.as_str()))
                         .unwrap_or("Unknown")
                         .to_string();
-                    Some((Id::new(id), name))
+
+                    // Parse channels from the guild object
+                    let channels: Vec<super::events::ReadyChannel> = g
+                        .get("channels")
+                        .and_then(|c| c.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|ch| {
+                                    let ch_id: u64 = ch.get("id")?.as_str()?.parse().ok()?;
+                                    let ch_name = ch.get("name")
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let kind = ch.get("type")
+                                        .and_then(|t| t.as_u64())
+                                        .unwrap_or(0) as u8;
+                                    let parent_id: Option<Id<twilight_model::id::marker::ChannelMarker>> = ch
+                                        .get("parent_id")
+                                        .and_then(|p| p.as_str())
+                                        .and_then(|s| s.parse().ok())
+                                        .map(Id::new);
+                                    let position = ch.get("position")
+                                        .and_then(|p| p.as_i64())
+                                        .unwrap_or(0) as i32;
+                                    Some(super::events::ReadyChannel {
+                                        id: Id::new(ch_id),
+                                        name: ch_name,
+                                        kind,
+                                        parent_id,
+                                        position,
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    Some(super::events::ReadyGuild {
+                        id: Id::new(id),
+                        name,
+                        channels,
+                    })
                 })
                 .collect()
         })
@@ -101,7 +141,8 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         .map(|arr| {
             arr.iter()
                 .filter_map(|ch| {
-                    let id = ch.get("id")?.as_str()?.parse().ok()?;
+                    let id: u64 = ch.get("id")?.as_str()?.parse().ok()?;
+                    // User account Ready may have full recipient objects or just recipient_ids
                     let recipients: Vec<String> = ch
                         .get("recipients")
                         .and_then(|r| r.as_array())
@@ -116,11 +157,25 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
                                 .collect()
                         })
                         .unwrap_or_default();
+                    // If no full recipients, try recipient_ids as fallback display
+                    let recipients = if recipients.is_empty() {
+                        ch.get("recipient_ids")
+                            .and_then(|r| r.as_array())
+                            .map(|ids| {
+                                ids.iter()
+                                    .filter_map(|id| id.as_str().map(|s| format!("User {}", s)))
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        recipients
+                    };
                     Some((Id::new(id), recipients))
                 })
                 .collect()
         })
         .unwrap_or_default();
+    tracing::info!("parsed {} DM channels from Ready", dm_channels.len());
 
     let session_id = d.get("session_id")?.as_str()?.to_string();
     let resume_url = d

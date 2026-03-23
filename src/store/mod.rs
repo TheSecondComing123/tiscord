@@ -132,14 +132,34 @@ impl Store {
                 self.current_user_name = Some(username.clone());
                 self.ui.connection_status = state::ConnectionStatus::Connected;
                 tracing::info!("ready as {} ({} guilds, {} DMs)", username, ready_guilds.len(), ready_dms.len());
-                // Create placeholder guilds from Ready data
-                // Channels will be empty until we fetch them via REST
-                for (guild_id, guild_name) in ready_guilds {
+                // Create guilds from Ready data, including channels if present
+                for rg in ready_guilds {
+                    // Discord channel types: 0=Text, 2=Voice, 4=Category, 5=Announcement, 15=Forum
+                    // Thread types (10, 11, 12) are filtered out
+                    let channels: Vec<guilds::ChannelInfo> = rg.channels
+                        .iter()
+                        .filter(|ch| !matches!(ch.kind, 10 | 11 | 12))
+                        .map(|ch| guilds::ChannelInfo {
+                            id: ch.id,
+                            name: ch.name.clone(),
+                            kind: match ch.kind {
+                                0 => guilds::ChannelKind::Text,
+                                2 => guilds::ChannelKind::Voice,
+                                4 => guilds::ChannelKind::Category,
+                                5 => guilds::ChannelKind::Announcement,
+                                15 => guilds::ChannelKind::Forum,
+                                _ => guilds::ChannelKind::Text,
+                            },
+                            category_id: ch.parent_id,
+                            position: ch.position,
+                        })
+                        .collect();
+                    tracing::debug!("guild {} has {} channels from Ready", rg.name, channels.len());
                     let info = guilds::GuildInfo {
-                        id: guild_id,
-                        name: guild_name,
+                        id: rg.id,
+                        name: rg.name,
                         icon: None,
-                        channels: Vec::new(),
+                        channels,
                     };
                     self.guilds.add_guild(info);
                 }

@@ -42,7 +42,7 @@ pub enum DiscordEvent {
     UserReady {
         user_id: Id<UserMarker>,
         username: String,
-        guilds: Vec<(Id<GuildMarker>, String)>,
+        guilds: Vec<ReadyGuild>,
         guild_folders: Vec<crate::store::GuildFolder>,
         dm_channels: Vec<(Id<ChannelMarker>, Vec<String>)>,
         session_id: String,
@@ -120,6 +120,24 @@ pub enum DiscordEvent {
         url: String,
         image: crate::store::images::CachedImage,
     },
+}
+
+/// Guild data extracted from the user account Ready payload.
+#[derive(Debug, Clone)]
+pub struct ReadyGuild {
+    pub id: Id<GuildMarker>,
+    pub name: String,
+    pub channels: Vec<ReadyChannel>,
+}
+
+/// Channel data extracted from the user account Ready payload.
+#[derive(Debug, Clone)]
+pub struct ReadyChannel {
+    pub id: Id<ChannelMarker>,
+    pub name: String,
+    pub kind: u8,
+    pub parent_id: Option<Id<ChannelMarker>>,
+    pub position: i32,
 }
 
 use twilight_gateway::Event;
