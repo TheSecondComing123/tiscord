@@ -45,6 +45,13 @@ pub enum MemberStatus {
 }
 
 #[derive(Debug, Clone)]
+pub struct GuildFolder {
+    pub name: Option<String>,
+    pub color: Option<u32>,
+    pub guild_ids: Vec<Id<GuildMarker>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct DmChannel {
     pub channel_id: Id<ChannelMarker>,
     pub recipient_names: Vec<String>,
@@ -53,6 +60,7 @@ pub struct DmChannel {
 
 pub struct Store {
     pub guilds: guilds::GuildState,
+    pub guild_folders: Vec<GuildFolder>,
     pub messages: HashMap<Id<ChannelMarker>, messages::MessageBuffer>,
     pub members: HashMap<Id<GuildMarker>, Vec<MemberInfo>>,
     pub notifications: notifications::NotificationState,
@@ -77,6 +85,7 @@ impl Store {
     pub fn new() -> Self {
         Self {
             guilds: guilds::GuildState::default(),
+            guild_folders: Vec::new(),
             messages: HashMap::new(),
             members: HashMap::new(),
             notifications: notifications::NotificationState::default(),
@@ -115,6 +124,7 @@ impl Store {
                 user_id,
                 username,
                 guilds: ready_guilds,
+                guild_folders: folders,
                 dm_channels: ready_dms,
                 ..
             } => {
@@ -133,6 +143,8 @@ impl Store {
                     };
                     self.guilds.add_guild(info);
                 }
+                // Store guild folders
+                self.guild_folders = folders;
                 // Populate DM channels from Ready data
                 for (channel_id, recipients) in ready_dms {
                     self.dm_channels.push(DmChannel {

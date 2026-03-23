@@ -61,6 +61,39 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         })
         .unwrap_or_default();
 
+    // Parse guild folders
+    let guild_folders: Vec<crate::store::GuildFolder> = d
+        .get("guild_folders")
+        .and_then(|gf| gf.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|f| {
+                    let guild_ids: Vec<Id<twilight_model::id::marker::GuildMarker>> = f
+                        .get("guild_ids")
+                        .and_then(|ids| ids.as_array())
+                        .map(|ids| {
+                            ids.iter()
+                                .filter_map(|id| {
+                                    id.as_str()?.parse().ok().map(Id::new)
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if guild_ids.is_empty() {
+                        return None;
+                    }
+                    let name = f.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+                    let color = f.get("color").and_then(|c| c.as_u64()).map(|c| c as u32);
+                    Some(crate::store::GuildFolder {
+                        name,
+                        color,
+                        guild_ids,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     // Parse DM channels from private_channels array
     let dm_channels: Vec<(Id<twilight_model::id::marker::ChannelMarker>, Vec<String>)> = d
         .get("private_channels")
@@ -100,6 +133,7 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         user_id,
         username,
         guilds,
+        guild_folders,
         dm_channels,
         session_id,
         resume_url,
