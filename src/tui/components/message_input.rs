@@ -86,21 +86,23 @@ impl Component for MessageInput {
             return Ok(None);
         }
 
-        // Ctrl shortcuts while typing
+        // Scroll messages while typing — switch focus to message list
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
-                KeyCode::Char('u') => {
-                    // Page up in messages while typing
-                    store.ui.message_scroll_offset = store.ui.message_scroll_offset.saturating_add(10);
-                    return Ok(None);
-                }
-                KeyCode::Char('d') => {
-                    // Page down in messages while typing
-                    store.ui.message_scroll_offset = store.ui.message_scroll_offset.saturating_sub(10);
+                KeyCode::Char('u') | KeyCode::Char('d') => {
+                    // Switch to message list so the scroll keys work there
+                    store.ui.focus = FocusTarget::MessageList;
                     return Ok(None);
                 }
                 _ => {}
             }
+        }
+        match key.code {
+            KeyCode::PageUp | KeyCode::PageDown => {
+                store.ui.focus = FocusTarget::MessageList;
+                return Ok(None);
+            }
+            _ => {}
         }
 
         match key.code {
@@ -110,6 +112,11 @@ impl Component for MessageInput {
                 store.ui.reply_to = None;
                 store.ui.editing_message = None;
                 self.clear();
+            }
+
+            // Up arrow with empty input -> focus message list to scroll
+            KeyCode::Up if self.content.is_empty() => {
+                store.ui.focus = FocusTarget::MessageList;
             }
 
             // Left arrow at cursor position 0 -> back to channel tree
