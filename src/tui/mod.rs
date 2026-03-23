@@ -1,7 +1,9 @@
 pub mod component;
 pub mod components;
 pub mod emoji_data;
+pub mod image_renderer;
 pub mod keybindings;
 pub mod markdown;
 pub mod terminal;
+pub mod terminal_caps;
 pub mod theme;

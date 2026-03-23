@@ -105,6 +105,15 @@ pub enum DiscordEvent {
         guild_id: twilight_model::id::Id<GuildMarker>,
         threads: Vec<crate::store::ThreadInfo>,
     },
+    /// REST response: a user profile was fetched and is ready to cache.
+    UserProfileLoaded {
+        profile: crate::store::profiles::UserProfile,
+    },
+    /// Image fetched and encoded; ready to be stored in the image cache.
+    ImageLoaded {
+        url: String,
+        image: crate::store::images::CachedImage,
+    },
 }
 
 use twilight_gateway::Event;

@@ -222,6 +222,15 @@ impl Component for MessageList {
             (KeyCode::Char('+'), KeyModifiers::NONE) => {
                 return Ok(Some(Action::ComponentKeyAction(KeyAction::OpenEmojiPicker)));
             }
+            // p (lowercase) - open profile overlay for the message author
+            (KeyCode::Char('p'), KeyModifiers::NONE) => {
+                if let Some(msg) = self.get_selected_message(store) {
+                    let author_id = msg.author_id;
+                    return Ok(Some(Action::ComponentKeyAction(
+                        KeyAction::OpenProfileOverlay { user_id: author_id },
+                    )));
+                }
+            }
             // P (uppercase) - pin or unpin the selected message
             (KeyCode::Char('P'), _) => {
                 if let Some(msg) = self.get_selected_message(store) {
@@ -332,7 +341,8 @@ impl Component for MessageList {
                 .and_then(|cid| store.active_threads.get(&cid))
                 .and_then(|threads| threads.iter().find(|t| t.id.get() == msg.id.get()));
 
-            let rendered = render_message_with_thread(msg, msg_area.width, thread_info);
+            // TODO: pass terminal_caps.supports_images() once threaded through render context
+            let rendered = render_message_with_thread(msg, msg_area.width, thread_info, false);
             let line_count = rendered.len();
             all_lines.extend(rendered);
             for _ in 0..line_count {

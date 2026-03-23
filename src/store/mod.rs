@@ -1,6 +1,8 @@
 pub mod guilds;
+pub mod images;
 pub mod messages;
 pub mod notifications;
+pub mod profiles;
 pub mod search;
 pub mod state;
 pub mod typing;
@@ -65,6 +67,10 @@ pub struct Store {
     pub pinned_messages: HashMap<Id<ChannelMarker>, Option<Vec<messages::StoredMessage>>>,
     /// Active threads indexed by parent channel ID.
     pub active_threads: HashMap<Id<ChannelMarker>, Vec<ThreadInfo>>,
+    /// User profile cache.
+    pub profiles: profiles::ProfileCache,
+    /// Image cache for inline attachment previews.
+    pub image_cache: images::ImageCache,
 }
 
 impl Store {
@@ -83,6 +89,8 @@ impl Store {
             search: search::SearchState::default(),
             pinned_messages: HashMap::new(),
             active_threads: HashMap::new(),
+            profiles: profiles::ProfileCache::default(),
+            image_cache: images::ImageCache::default(),
         }
     }
 
@@ -476,6 +484,12 @@ impl Store {
                     }),
                     None => self.voice.user_left(user_id),
                 }
+            }
+            DiscordEvent::UserProfileLoaded { profile } => {
+                self.profiles.insert(profile);
+            }
+            DiscordEvent::ImageLoaded { url, image } => {
+                self.image_cache.insert(url, image);
             }
         }
     }
