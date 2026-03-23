@@ -24,3 +24,7 @@ unicode-width = "0.2"
 fuzzy-matcher = "0.3"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
+
+[patch.crates-io]
+twilight-gateway = { path = "patches/twilight-gateway" }
+twilight-http = { path = "patches/twilight-http" }

@@ -33,6 +33,14 @@ pub enum DiscordEvent {
     },
     GatewayReconnect,
     GatewayDisconnect,
+    // User account Ready (manually parsed since twilight can't deserialize it)
+    UserReady {
+        user_id: Id<UserMarker>,
+        username: String,
+        guild_ids: Vec<Id<GuildMarker>>,
+        session_id: String,
+        resume_url: String,
+    },
     // REST response events (sent by action handler, not gateway)
     MessagesLoaded {
         channel_id: Id<ChannelMarker>,

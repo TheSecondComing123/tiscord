@@ -1,0 +1,58 @@
+[package]
+authors.workspace = true
+categories = ["api-bindings", "asynchronous", "web-programming::websocket"]
+description = "Discord Gateway implementation for the Twilight ecosystem."
+edition.workspace = true
+homepage = "https://twilight.rs/chapter_1_crates/section_3_gateway.html"
+include.workspace = true
+keywords = ["discord", "discord-api", "twilight"]
+license.workspace = true
+name = "twilight-gateway"
+publish = true
+repository.workspace = true
+rust-version.workspace = true
+version = "0.17.1"
+
+[dependencies]
+bitflags = { default-features = false, version = "2" }
+fastrand = { default-features = false, features = ["std"], version = "2" }
+futures-core = { default-features = false, features = ["std"], version = "0.3" }
+futures-sink = { default-features = false, features = ["std"], version = "0.3" }
+serde = { default-features = false, features = ["derive"], version = "1" }
+serde_json = { default-features = false, features = ["std"], version = "1" }
+tokio = { default-features = false, features = ["net", "rt", "sync", "time"], version = "1.19" }
+tokio-websockets = { default-features = false, features = ["client", "fastrand", "sha1_smol"], version = "0.13" }
+tracing = { default-features = false, features = ["std"], version = "0.1" }
+twilight-gateway-queue = { default-features = false, path = "../twilight-gateway-queue", version = "0.17.0" }
+twilight-model = { default-features = false, path = "../twilight-model", version = "0.17.0" }
+
+twilight-http = { default-features = false, optional = true, path = "../twilight-http", version = "0.17.0" }
+simd-json = { default-features = false, features = ["serde_impl", "swar-number-parsing"], optional = true, version = "0.17" }
+zstd-safe = { default-features = false, optional = true, version = "7.2.1" }
+
+[target.'cfg(target_arch="s390x")'.dependencies]
+flate2 = { default-features = false, features = ["zlib-ng"], optional = true, version = "1.0.24" }
+
+[target.'cfg(not(target_arch="s390x"))'.dependencies]
+flate2 = { default-features = false, features = ["zlib-rs"], optional = true, version = "1.0.24" }
+
+[dev-dependencies]
+anyhow = { default-features = false, features = ["std"], version = "1" }
+rustls = { default-features = false, features = ["ring"], version = "0.23" }
+serde_test = { default-features = false, version = "1.0.136" }
+static_assertions = { default-features = false, version = "1" }
+tokio = { default-features = false, features = ["macros", "rt-multi-thread", "signal", "test-util"], version = "1.12" }
+tokio-stream = { default-features = false, version = "0.1" }
+tracing-subscriber = { default-features = false, features = ["fmt", "tracing-log"], version = "0.3" }
+
+[features]
+default = ["rustls-platform-verifier", "twilight-http", "zstd"]
+native-tls = ["tokio-websockets/native-tls", "tokio-websockets/openssl"]
+rustls-platform-verifier = ["tokio-websockets/rustls-platform-verifier"]
+rustls-native-roots = ["tokio-websockets/rustls-native-roots"]
+rustls-webpki-roots = ["tokio-websockets/rustls-webpki-roots"]
+zlib = ["dep:flate2"]
+zstd = ["dep:zstd-safe"]
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]

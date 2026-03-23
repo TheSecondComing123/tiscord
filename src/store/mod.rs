@@ -73,6 +73,18 @@ impl Store {
                 self.ui.connection_status = state::ConnectionStatus::Connected;
                 tracing::info!("ready as {}", ready.user.name);
             }
+            DiscordEvent::UserReady {
+                user_id,
+                username,
+                guild_ids,
+                ..
+            } => {
+                self.current_user_id = Some(user_id);
+                self.current_user_name = Some(username.clone());
+                self.ui.connection_status = state::ConnectionStatus::Connected;
+                tracing::info!("ready as {} ({} guilds)", username, guild_ids.len());
+                // Guild details will arrive via GuildCreate events
+            }
             DiscordEvent::GuildCreate(guild) => {
                 let channels = guild
                     .channels
