@@ -43,3 +43,35 @@ pub enum DiscordEvent {
         members: Vec<twilight_model::guild::Member>,
     },
 }
+
+use twilight_gateway::Event;
+use twilight_model::gateway::payload::incoming::GuildCreate;
+
+pub fn translate_event(event: Event) -> Option<DiscordEvent> {
+    match event {
+        Event::Ready(ready) => Some(DiscordEvent::Ready(Box::new(ready))),
+        Event::GuildCreate(gc) => match *gc {
+            GuildCreate::Available(guild) => Some(DiscordEvent::GuildCreate(Box::new(guild))),
+            GuildCreate::Unavailable(_) => None,
+        },
+        Event::GuildDelete(gd) => Some(DiscordEvent::GuildDelete(gd.id)),
+        Event::ChannelCreate(cc) => Some(DiscordEvent::ChannelCreate(Box::new(cc.0))),
+        Event::ChannelUpdate(cu) => Some(DiscordEvent::ChannelUpdate(Box::new(cu.0))),
+        Event::ChannelDelete(cd) => Some(DiscordEvent::ChannelDelete(cd.0.id)),
+        Event::MessageCreate(mc) => Some(DiscordEvent::MessageCreate(Box::new(mc.0))),
+        Event::MessageUpdate(mu) => Some(DiscordEvent::MessageUpdate {
+            channel_id: mu.channel_id,
+            message_id: mu.id,
+            content: Some(mu.0.content.clone()),
+        }),
+        Event::MessageDelete(md) => Some(DiscordEvent::MessageDelete {
+            channel_id: md.channel_id,
+            message_id: md.id,
+        }),
+        Event::MemberChunk(mc) => Some(DiscordEvent::MemberChunk {
+            guild_id: mc.guild_id,
+            members: mc.members.clone(),
+        }),
+        _ => None,
+    }
+}
