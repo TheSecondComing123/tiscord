@@ -98,6 +98,15 @@ impl Component for MemberSidebar {
                 let dot = Span::styled("\u{25CF} ", Style::default().fg(theme::ONLINE));
                 let name = Span::styled(member.name.as_str(), Style::default().fg(theme::TEXT_PRIMARY));
                 lines.push(Line::from(vec![dot, name]));
+                if let Some(cs) = &member.custom_status {
+                    let status_text = match (&cs.emoji, &cs.text) {
+                        (Some(e), Some(t)) => format!("  {} {}", e, t),
+                        (Some(e), None) => format!("  {}", e),
+                        (None, Some(t)) => format!("  {}", t),
+                        (None, None) => continue,
+                    };
+                    lines.push(Line::from(Span::styled(status_text, theme::muted())));
+                }
             }
         }
 
@@ -115,6 +124,15 @@ impl Component for MemberSidebar {
                 let dot = Span::styled("\u{25CF} ", Style::default().fg(theme::TEXT_MUTED));
                 let name = Span::styled(member.name.as_str(), Style::default().fg(theme::TEXT_SECONDARY));
                 lines.push(Line::from(vec![dot, name]));
+                if let Some(cs) = &member.custom_status {
+                    let status_text = match (&cs.emoji, &cs.text) {
+                        (Some(e), Some(t)) => format!("  {} {}", e, t),
+                        (Some(e), None) => format!("  {}", e),
+                        (None, Some(t)) => format!("  {}", t),
+                        (None, None) => continue,
+                    };
+                    lines.push(Line::from(Span::styled(status_text, theme::muted())));
+                }
             }
         }
 
