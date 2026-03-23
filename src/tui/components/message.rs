@@ -2,13 +2,21 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::store::messages::{ReactionEmoji, StoredMessage};
+use crate::store::ThreadInfo;
 use crate::tui::theme;
 use crate::utils::time::format_timestamp;
 
 /// Render a single `StoredMessage` into a sequence of ratatui `Line`s.
 ///
-/// Order: optional reply quote, header, content lines, attachments.
+/// Order: optional reply quote, header, content lines, attachments, optional thread indicator, reactions.
+///
+/// `thread` is optional thread info if this message has an associated thread.
 pub fn render_message(msg: &StoredMessage, _width: u16) -> Vec<Line<'static>> {
+    render_message_with_thread(msg, _width, None)
+}
+
+/// Like `render_message` but also accepts optional thread info to display a thread indicator.
+pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Option<&ThreadInfo>) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // ── reply context ────────────────────────────────────────────────────────
@@ -57,6 +65,12 @@ pub fn render_message(msg: &StoredMessage, _width: u16) -> Vec<Line<'static>> {
         let size_str = format_size(attachment.size);
         let text = format!("[file: {} ({})]", attachment.filename, size_str);
         lines.push(Line::from(Span::styled(text, theme::secondary_text())));
+    }
+
+    // ── thread indicator ─────────────────────────────────────────────────────
+    if let Some(t) = thread {
+        let text = format!("\u{1f9f5} {} ({} replies)", t.name, t.message_count);
+        lines.push(Line::from(Span::styled(text, Style::default().fg(theme::ACCENT))));
     }
 
     // ── reactions ────────────────────────────────────────────────────────────

@@ -69,6 +69,11 @@ pub enum Action {
         channel_id: Id<ChannelMarker>,
         message_id: Id<MessageMarker>,
     },
+    /// Open a thread view by pushing a Thread pane onto the navigation stack.
+    OpenThread {
+        parent_channel: Id<ChannelMarker>,
+        thread_id: Id<ChannelMarker>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -208,6 +213,9 @@ pub async fn run_action_handler(
                     },
                     Err(e) => tracing::error!("failed to fetch channel for search nav: {e}"),
                 }
+            }
+            Action::OpenThread { .. } => {
+                // Handled by App before reaching here; ignore if it leaks.
             }
             Action::ComponentKeyAction(_) => {
                 // Handled by App before reaching here; ignore if it leaks.

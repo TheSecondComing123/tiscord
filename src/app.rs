@@ -11,7 +11,7 @@ use crate::config::Config;
 use crate::discord::actions::Action;
 use crate::discord::events::DiscordEvent;
 use crate::store::search::SearchScope;
-use crate::store::state::{ConnectionStatus, FocusTarget, ReplyTarget};
+use crate::store::state::{ConnectionStatus, FocusTarget, PaneView, ReplyTarget};
 use crate::store::Store;
 use crate::tui::component::Component;
 use crate::tui::components::member_sidebar::MemberSidebar;
@@ -401,6 +401,15 @@ impl App {
                             }
                         }
                     }
+                }
+                // OpenThread: push pane onto nav stack and fetch messages for the thread.
+                Action::OpenThread { parent_channel, thread_id } => {
+                    store.ui.push_pane(PaneView::Thread { parent_channel, thread_id });
+                    let _ = self.action_tx.send(Action::FetchMessages {
+                        channel_id: thread_id,
+                        before: None,
+                        limit: 50,
+                    });
                 }
                 // Regular discord actions (SendMessage, FetchMessages, etc.)
                 other => {
