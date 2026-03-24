@@ -1,7 +1,11 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use twilight_model::id::Id;
+use twilight_model::id::marker::ChannelMarker;
 
 use crate::discord::actions::Action;
 use crate::store::guilds::ChannelKind;
@@ -10,13 +14,66 @@ use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
 use crate::tui::theme;
 
+/// An entry in the flat, navigable channel tree list.
+#[derive(Debug, Clone)]
+enum TreeEntry {
+    /// A category header that can be collapsed/expanded.
+    Category { id: Id<ChannelMarker> },
+    /// A selectable channel.
+    Channel { selectable_idx: usize },
+}
+
 pub struct ChannelTree {
-    selected_index: usize,
+    /// Index into the flat `TreeEntry` list (includes categories).
+    cursor: usize,
+    /// Set of category IDs whose children are currently hidden.
+    collapsed_categories: HashSet<Id<ChannelMarker>>,
 }
 
 impl ChannelTree {
     pub fn new() -> Self {
-        Self { selected_index: 0 }
+        Self {
+            cursor: 0,
+            collapsed_categories: HashSet::new(),
+        }
+    }
+
+    /// Build the flat list of tree entries, respecting collapsed categories.
+    /// Returns (entries, selectable_channels_in_order).
+    fn build_entries<'a>(
+        &self,
+        channels: &[&'a crate::store::guilds::ChannelInfo],
+    ) -> (Vec<TreeEntry>, Vec<usize>) {
+        let mut entries: Vec<TreeEntry> = Vec::new();
+        let mut selectable_order: Vec<usize> = Vec::new(); // index into channels slice
+        let mut selectable_idx = 0usize;
+        let mut current_category: Option<Id<ChannelMarker>> = None;
+        let mut current_category_collapsed = false;
+
+        for (ch_idx, ch) in channels.iter().enumerate() {
+            match ch.kind {
+                ChannelKind::Category => {
+                    current_category = Some(ch.id);
+                    current_category_collapsed = self.collapsed_categories.contains(&ch.id);
+                    entries.push(TreeEntry::Category { id: ch.id });
+                }
+                _ => {
+                    // Determine if this channel belongs to a collapsed category.
+                    let is_hidden = match ch.category_id {
+                        Some(cat_id) => self.collapsed_categories.contains(&cat_id),
+                        None => false,
+                    };
+                    if !is_hidden {
+                        entries.push(TreeEntry::Channel { selectable_idx });
+                        selectable_order.push(ch_idx);
+                        selectable_idx += 1;
+                    }
+                }
+            }
+            let _ = (ch_idx, current_category, current_category_collapsed);
+        }
+
+        (entries, selectable_order)
     }
 }
 
@@ -32,53 +89,113 @@ impl Component for ChannelTree {
         };
 
         let channels = store.guilds.get_channels_for_guild(guild_id);
-        // Build the flat list of selectable channels (non-category)
-        let selectable: Vec<_> = channels
-            .iter()
-            .filter(|ch| ch.kind != ChannelKind::Category)
-            .collect();
+        let (entries, selectable_order) = self.build_entries(&channels);
 
-        let total = selectable.len();
+        let total_entries = entries.len();
 
-        let changed = match key.code {
+        match key.code {
             KeyCode::Down => {
-                if total > 0 && self.selected_index + 1 < total {
-                    self.selected_index += 1;
-                    true
-                } else {
-                    false
+                if total_entries > 0 && self.cursor + 1 < total_entries {
+                    self.cursor += 1;
                 }
             }
             KeyCode::Up => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                    true
-                } else {
-                    false
+                if self.cursor > 0 {
+                    self.cursor -= 1;
                 }
             }
             KeyCode::Enter | KeyCode::Right => {
-                store.ui.focus = FocusTarget::MessageInput;
-                return Ok(None);
+                // Check what is under the cursor.
+                match entries.get(self.cursor) {
+                    Some(TreeEntry::Category { id }) => {
+                        // Toggle collapse for this category.
+                        if self.collapsed_categories.contains(id) {
+                            self.collapsed_categories.remove(id);
+                        } else {
+                            self.collapsed_categories.insert(*id);
+                        }
+                        // Clamp cursor in case entries shrank.
+                        let (new_entries, _) = self.build_entries(&channels);
+                        if self.cursor >= new_entries.len() && !new_entries.is_empty() {
+                            self.cursor = new_entries.len() - 1;
+                        }
+                        return Ok(None);
+                    }
+                    Some(TreeEntry::Channel { selectable_idx }) => {
+                        // Select this channel.
+                        if let Some(&ch_idx) = selectable_order.get(*selectable_idx) {
+                            if let Some(ch) = channels.get(ch_idx) {
+                                let channel_id = ch.id;
+                                let is_forum = ch.kind == ChannelKind::Forum;
+                                store.ui.selected_channel = Some(channel_id);
+                                store.notifications.mark_read(channel_id);
+                                store.ui.focus = FocusTarget::MessageInput;
+                                if is_forum {
+                                    return Ok(Some(Action::FetchActiveThreads {
+                                        guild_id,
+                                        channel_id,
+                                    }));
+                                } else {
+                                    return Ok(Some(Action::FetchMessages {
+                                        channel_id,
+                                        before: None,
+                                        limit: 50,
+                                    }));
+                                }
+                            }
+                        }
+                        store.ui.focus = FocusTarget::MessageInput;
+                        return Ok(None);
+                    }
+                    None => {
+                        store.ui.focus = FocusTarget::MessageInput;
+                        return Ok(None);
+                    }
+                }
             }
             KeyCode::Esc | KeyCode::Left => {
                 store.ui.focus = FocusTarget::ServerList;
                 return Ok(None);
             }
-            _ => false,
-        };
+            KeyCode::Char('m') => {
+                // Toggle mute for the channel under the cursor.
+                if let Some(entry) = entries.get(self.cursor) {
+                    if let TreeEntry::Channel { selectable_idx } = entry {
+                        if let Some(&ch_idx) = selectable_order.get(*selectable_idx) {
+                            if let Some(ch) = channels.get(ch_idx) {
+                                store.toggle_mute_channel(ch.id);
+                            }
+                        }
+                    }
+                }
+                return Ok(None);
+            }
+            _ => {}
+        }
 
-        // Auto-select channel on navigate and fetch messages
-        if changed {
-            if let Some(ch) = selectable.get(self.selected_index) {
-                let channel_id = ch.id;
-                store.ui.selected_channel = Some(channel_id);
-                store.notifications.mark_read(channel_id);
-                return Ok(Some(Action::FetchMessages {
-                    channel_id,
-                    before: None,
-                    limit: 50,
-                }));
+        // After Up/Down navigation, auto-select the underlying channel (if any).
+        if let Some(entry) = entries.get(self.cursor) {
+            if let TreeEntry::Channel { selectable_idx } = entry {
+                if let Some(&ch_idx) = selectable_order.get(*selectable_idx) {
+                    if let Some(ch) = channels.get(ch_idx) {
+                        let channel_id = ch.id;
+                        let is_forum = ch.kind == ChannelKind::Forum;
+                        store.ui.selected_channel = Some(channel_id);
+                        store.notifications.mark_read(channel_id);
+                        if is_forum {
+                            return Ok(Some(Action::FetchActiveThreads {
+                                guild_id,
+                                channel_id,
+                            }));
+                        } else {
+                            return Ok(Some(Action::FetchMessages {
+                                channel_id,
+                                before: None,
+                                limit: 50,
+                            }));
+                        }
+                    }
+                }
             }
         }
 
@@ -101,117 +218,141 @@ impl Component for ChannelTree {
         };
 
         let channels = store.guilds.get_channels_for_guild(guild_id);
+        let (entries, selectable_order) = self.build_entries(&channels);
 
-        // Track which selectable index we are at while iterating
-        let mut selectable_idx: usize = 0;
-        let mut selected_list_row: Option<usize> = None;
         let mut items: Vec<ListItem> = Vec::new();
+        let mut selected_list_row: Option<usize> = None;
 
-        for ch in &channels {
-            match ch.kind {
-                ChannelKind::Category => {
-                    let label = ch.name.to_uppercase();
-                    items.push(ListItem::new(Line::from(Span::styled(
-                        label,
-                        theme::muted().add_modifier(Modifier::BOLD),
-                    ))));
-                }
-                ChannelKind::Voice => {
-                    let is_selected = selectable_idx == self.selected_index;
-                    if is_selected {
+        for (entry_idx, entry) in entries.iter().enumerate() {
+            let is_cursor = entry_idx == self.cursor;
+
+            match entry {
+                TreeEntry::Category { id } => {
+                    // Find this category in the channels list.
+                    let cat = channels.iter().find(|c| c.id == *id);
+                    let cat_name = cat.map(|c| c.name.as_str()).unwrap_or("?");
+                    let is_collapsed = self.collapsed_categories.contains(id);
+                    let indicator = if is_collapsed { "▸" } else { "▾" };
+                    let label = format!("{} {}", indicator, cat_name.to_uppercase());
+
+                    let style = if is_cursor {
+                        theme::selected().add_modifier(Modifier::BOLD)
+                    } else {
+                        theme::muted().add_modifier(Modifier::BOLD)
+                    };
+
+                    if is_cursor {
                         selected_list_row = Some(items.len());
                     }
-                    let user_count = store.voice.user_count(ch.id);
-                    let name = if user_count > 0 {
-                        format!("\u{1f50a} {} ({})", ch.name, user_count)
-                    } else {
-                        format!("\u{1f50a} {}", ch.name)
-                    };
-                    let style = if is_selected {
-                        theme::selected()
-                    } else {
-                        theme::muted()
-                    };
-                    items.push(ListItem::new(Line::from(Span::styled(name, style))));
-                    selectable_idx += 1;
+                    items.push(ListItem::new(Line::from(Span::styled(label, style))));
+                }
 
-                    // When selected, show connected users indented below
-                    if is_selected && user_count > 0 {
-                        for voice_user in store.voice.get_users(ch.id) {
-                            let mute_indicator = if voice_user.self_mute || voice_user.self_deaf {
-                                "\u{1f507} "
+                TreeEntry::Channel { selectable_idx } => {
+                    let ch_idx = match selectable_order.get(*selectable_idx) {
+                        Some(&i) => i,
+                        None => continue,
+                    };
+                    let ch = match channels.get(ch_idx) {
+                        Some(c) => c,
+                        None => continue,
+                    };
+
+                    if is_cursor {
+                        selected_list_row = Some(items.len());
+                    }
+
+                    match ch.kind {
+                        ChannelKind::Voice => {
+                            let user_count = store.voice.user_count(ch.id);
+                            let name = if user_count > 0 {
+                                format!("\u{1f50a} {} ({})", ch.name, user_count)
                             } else {
-                                "   "
+                                format!("\u{1f50a} {}", ch.name)
                             };
-                            let label = format!("  {}{}", mute_indicator, voice_user.display_name);
-                            items.push(ListItem::new(Line::from(Span::styled(
-                                label,
-                                theme::muted(),
-                            ))));
+                            let style = if is_cursor {
+                                theme::selected()
+                            } else {
+                                theme::muted()
+                            };
+                            items.push(ListItem::new(Line::from(Span::styled(name, style))));
+
+                            // When selected, show connected users indented below
+                            if is_cursor && user_count > 0 {
+                                for voice_user in store.voice.get_users(ch.id) {
+                                    let mute_indicator =
+                                        if voice_user.self_mute || voice_user.self_deaf {
+                                            "\u{1f507} "
+                                        } else {
+                                            "   "
+                                        };
+                                    let label =
+                                        format!("  {}{}", mute_indicator, voice_user.display_name);
+                                    items.push(ListItem::new(Line::from(Span::styled(
+                                        label,
+                                        theme::muted(),
+                                    ))));
+                                }
+                            }
+                        }
+                        // Text, Announcement, Forum
+                        _ => {
+                            let has_unread = store.notifications.has_unreads(ch.id);
+                            let has_mention = store.notifications.has_mentions(ch.id);
+                            let has_slowmode =
+                                ch.rate_limit_per_user.map(|r| r > 0).unwrap_or(false);
+
+                            let name = if ch.nsfw {
+                                if has_slowmode {
+                                    format!("🔞 {} \u{1f40c}", ch.name)
+                                } else {
+                                    format!("🔞 {}", ch.name)
+                                }
+                            } else if has_slowmode {
+                                format!("# {} \u{1f40c}", ch.name)
+                            } else {
+                                format!("# {}", ch.name)
+                            };
+
+                            let has_typers = store.typing.has_typers(ch.id);
+
+                            let base_style = if is_cursor {
+                                theme::selected()
+                            } else {
+                                theme::secondary_text()
+                            };
+                            let name_style = if has_unread || has_mention {
+                                base_style.add_modifier(Modifier::BOLD)
+                            } else {
+                                base_style
+                            };
+
+                            let mut spans = vec![Span::styled(name, name_style)];
+
+                            if has_typers {
+                                spans.push(Span::styled(
+                                    " \u{22ef}",
+                                    theme::muted().add_modifier(Modifier::DIM),
+                                ));
+                            }
+
+                            if has_mention {
+                                let count = store
+                                    .notifications
+                                    .get(ch.id)
+                                    .map(|n| n.mention_count)
+                                    .unwrap_or(0);
+                                spans.push(Span::raw(" "));
+                                spans.push(Span::styled(
+                                    format!("({})", count),
+                                    Style::default()
+                                        .fg(theme::MENTION)
+                                        .add_modifier(Modifier::BOLD),
+                                ));
+                            }
+
+                            items.push(ListItem::new(Line::from(spans)));
                         }
                     }
-                }
-                // Text, Announcement, Forum treated as text channels
-                _ => {
-                    let is_selected = selectable_idx == self.selected_index;
-                    if is_selected {
-                        selected_list_row = Some(items.len());
-                    }
-                    let has_unread = store.notifications.has_unreads(ch.id);
-                    let has_mention = store.notifications.has_mentions(ch.id);
-
-                    let has_slowmode = ch.rate_limit_per_user.map(|r| r > 0).unwrap_or(false);
-                    let name = if ch.nsfw {
-                        if has_slowmode {
-                            format!("🔞 {} \u{1f40c}", ch.name)
-                        } else {
-                            format!("🔞 {}", ch.name)
-                        }
-                    } else if has_slowmode {
-                        format!("# {} \u{1f40c}", ch.name)
-                    } else {
-                        format!("# {}", ch.name)
-                    };
-                    let has_typers = store.typing.has_typers(ch.id);
-
-                    let base_style = if is_selected {
-                        theme::selected()
-                    } else {
-                        theme::secondary_text()
-                    };
-
-                    let name_style = if has_unread || has_mention {
-                        base_style.add_modifier(Modifier::BOLD)
-                    } else {
-                        base_style
-                    };
-
-                    let mut spans = vec![Span::styled(name, name_style)];
-
-                    if has_typers {
-                        spans.push(Span::styled(
-                            " \u{22ef}",
-                            theme::muted().add_modifier(Modifier::DIM),
-                        ));
-                    }
-
-                    if has_mention {
-                        let count = store
-                            .notifications
-                            .get(ch.id)
-                            .map(|n| n.mention_count)
-                            .unwrap_or(0);
-                        spans.push(Span::raw(" "));
-                        spans.push(Span::styled(
-                            format!("({})", count),
-                            Style::default()
-                                .fg(theme::MENTION)
-                                .add_modifier(Modifier::BOLD),
-                        ));
-                    }
-
-                    items.push(ListItem::new(Line::from(spans)));
-                    selectable_idx += 1;
                 }
             }
         }
