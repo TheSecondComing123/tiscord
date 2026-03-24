@@ -78,6 +78,51 @@ impl MessageInput {
         let byte_end = self.char_to_byte(self.cursor_pos + 1);
         self.content.drain(byte_start..byte_end);
     }
+
+    /// Move cursor to the beginning of the previous word (Ctrl+Left).
+    ///
+    /// Scans backward from `cursor_pos - 1`. First skips any non-alphanumeric
+    /// characters, then skips the alphanumeric run, landing at its start.
+    fn move_word_left(&mut self) {
+        if self.cursor_pos == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.content.chars().collect();
+        let mut pos = self.cursor_pos;
+
+        // Skip over trailing non-alphanumeric characters.
+        while pos > 0 && !chars[pos - 1].is_alphanumeric() {
+            pos -= 1;
+        }
+        // Skip over the alphanumeric word.
+        while pos > 0 && chars[pos - 1].is_alphanumeric() {
+            pos -= 1;
+        }
+        self.cursor_pos = pos;
+    }
+
+    /// Move cursor to the end of the next word (Ctrl+Right).
+    ///
+    /// Scans forward from `cursor_pos`. First skips any non-alphanumeric
+    /// characters, then skips the alphanumeric run, landing just after it.
+    fn move_word_right(&mut self) {
+        let count = self.char_count();
+        if self.cursor_pos >= count {
+            return;
+        }
+        let chars: Vec<char> = self.content.chars().collect();
+        let mut pos = self.cursor_pos;
+
+        // Skip over leading non-alphanumeric characters.
+        while pos < count && !chars[pos].is_alphanumeric() {
+            pos += 1;
+        }
+        // Skip over the alphanumeric word.
+        while pos < count && chars[pos].is_alphanumeric() {
+            pos += 1;
+        }
+        self.cursor_pos = pos;
+    }
 }
 
 impl Component for MessageInput {
@@ -104,6 +149,16 @@ impl Component for MessageInput {
             // Up arrow with empty input -> focus message list to scroll
             KeyCode::Up if self.content.is_empty() => {
                 store.ui.focus = FocusTarget::MessageList;
+            }
+
+            // Ctrl+Left -> move to beginning of previous word
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_word_left();
+            }
+
+            // Ctrl+Right -> move to end of next word
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_word_right();
             }
 
             // Left arrow at cursor position 0 -> back to channel tree
@@ -514,6 +569,80 @@ mod tests {
         input.clear();
         assert_eq!(input.content, "");
         assert_eq!(input.cursor_pos, 0);
+    }
+
+    // --- word navigation ---
+
+    #[test]
+    fn test_move_word_left_basic() {
+        let mut input = MessageInput::new();
+        input.content = "hello world".to_string();
+        input.cursor_pos = 11; // at end
+        input.move_word_left();
+        assert_eq!(input.cursor_pos, 6); // start of "world"
+    }
+
+    #[test]
+    fn test_move_word_left_from_middle_of_word() {
+        let mut input = MessageInput::new();
+        input.content = "hello world".to_string();
+        input.cursor_pos = 8; // inside "world"
+        input.move_word_left();
+        assert_eq!(input.cursor_pos, 6); // start of "world"
+    }
+
+    #[test]
+    fn test_move_word_left_at_start_is_noop() {
+        let mut input = MessageInput::new();
+        input.content = "hello".to_string();
+        input.cursor_pos = 0;
+        input.move_word_left();
+        assert_eq!(input.cursor_pos, 0);
+    }
+
+    #[test]
+    fn test_move_word_left_skips_spaces() {
+        let mut input = MessageInput::new();
+        input.content = "hello   world".to_string();
+        input.cursor_pos = 8; // inside spaces before "world"
+        input.move_word_left();
+        assert_eq!(input.cursor_pos, 0); // start of "hello"
+    }
+
+    #[test]
+    fn test_move_word_right_basic() {
+        let mut input = MessageInput::new();
+        input.content = "hello world".to_string();
+        input.cursor_pos = 0;
+        input.move_word_right();
+        assert_eq!(input.cursor_pos, 5); // end of "hello"
+    }
+
+    #[test]
+    fn test_move_word_right_from_middle_of_word() {
+        let mut input = MessageInput::new();
+        input.content = "hello world".to_string();
+        input.cursor_pos = 2; // inside "hello"
+        input.move_word_right();
+        assert_eq!(input.cursor_pos, 5); // end of "hello"
+    }
+
+    #[test]
+    fn test_move_word_right_at_end_is_noop() {
+        let mut input = MessageInput::new();
+        input.content = "hello".to_string();
+        input.cursor_pos = 5;
+        input.move_word_right();
+        assert_eq!(input.cursor_pos, 5);
+    }
+
+    #[test]
+    fn test_move_word_right_skips_spaces() {
+        let mut input = MessageInput::new();
+        input.content = "hello   world".to_string();
+        input.cursor_pos = 5; // after "hello", before spaces
+        input.move_word_right();
+        assert_eq!(input.cursor_pos, 13); // end of "world"
     }
 
     // --- set_content ---
