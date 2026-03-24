@@ -33,6 +33,17 @@ fn date_separator_line(date: NaiveDate, width: u16) -> Line<'static> {
     Line::from(Span::styled(centered, theme::muted()))
 }
 
+/// Build a centered "── NEW ──" separator line in the mention/alert color.
+fn new_separator_line(width: u16) -> Line<'static> {
+    let inner = "── NEW ──";
+    let pad = (width as usize).saturating_sub(inner.len()) / 2;
+    let centered = format!("{}{}", " ".repeat(pad), inner);
+    Line::from(Span::styled(
+        centered,
+        Style::default().fg(theme::MENTION),
+    ))
+}
+
 pub struct MessageList {
     // Wrapped in Cell so they can be mutated in render(&self).
     selected_index: Cell<Option<usize>>,
@@ -319,9 +330,33 @@ impl Component for MessageList {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
         let mut line_owners: Vec<usize> = Vec::new();
 
+        // Determine the index of the first "new" (unread) message, if any.
+        // When there are N unreads and the user has scrolled up, show a separator
+        // before the (total - N)th message.
+        let new_separator_before: Option<usize> = if !self.auto_scroll.get() {
+            let unread_count = store
+                .notifications
+                .get(channel_id)
+                .map(|n| n.unread_count as usize)
+                .unwrap_or(0);
+            if unread_count > 0 && unread_count < messages.len() {
+                Some(messages.len() - unread_count)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut prev_date: Option<NaiveDate> = None;
 
         for (msg_idx, msg) in messages.iter().enumerate() {
+            // Insert the "── NEW ──" separator before the first unread message.
+            if new_separator_before == Some(msg_idx) {
+                all_lines.push(new_separator_line(msg_area.width));
+                line_owners.push(msg_idx);
+            }
+
             // Insert a date separator when the calendar day changes.
             let cur_date = message_date(&msg.timestamp);
             if let Some(date) = cur_date {
