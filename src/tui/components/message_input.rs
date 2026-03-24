@@ -20,6 +20,42 @@ use crate::tui::theme;
 /// Discord typing indicators should not be sent more than once per 10 seconds.
 const TYPING_THROTTLE: Duration = Duration::from_secs(10);
 
+/// Maximum number of autocomplete suggestions to display at once.
+const MAX_SUGGESTIONS: usize = 5;
+
+#[derive(Debug, PartialEq)]
+enum AutocompleteKind {
+    None,
+    Mention,
+    Emoji,
+}
+
+struct AutocompleteState {
+    kind: AutocompleteKind,
+    query: String,
+    /// Character index in `content` where the trigger character (`@` or `:`) sits.
+    trigger_pos: usize,
+    /// (display_text, insert_text) pairs.
+    suggestions: Vec<(String, String)>,
+    selected: usize,
+}
+
+impl AutocompleteState {
+    fn inactive() -> Self {
+        Self {
+            kind: AutocompleteKind::None,
+            query: String::new(),
+            trigger_pos: 0,
+            suggestions: Vec::new(),
+            selected: 0,
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.kind != AutocompleteKind::None
+    }
+}
+
 /// Replace all `:name:` shortcodes in `content` with their Unicode emoji equivalents.
 /// Shortcodes with no match are left as-is.
 pub fn expand_emoji_shortcodes(content: &str) -> String {
@@ -66,6 +102,8 @@ pub struct MessageInput {
     file_path_buffer: String,
     /// Per-channel draft text saved when the user switches away from a channel.
     drafts: HashMap<Id<ChannelMarker>, String>,
+    /// Active inline autocomplete state.
+    autocomplete: AutocompleteState,
 }
 
 impl MessageInput {
@@ -77,6 +115,7 @@ impl MessageInput {
             file_upload_mode: false,
             file_path_buffer: String::new(),
             drafts: HashMap::new(),
+            autocomplete: AutocompleteState::inactive(),
         }
     }
 
@@ -84,12 +123,14 @@ impl MessageInput {
     pub fn set_content(&mut self, content: String) {
         self.cursor_pos = content.chars().count();
         self.content = content;
+        self.autocomplete = AutocompleteState::inactive();
     }
 
     /// Clear content and reset cursor.
     pub fn clear(&mut self) {
         self.content.clear();
         self.cursor_pos = 0;
+        self.autocomplete = AutocompleteState::inactive();
     }
 
     /// Save the current content as a draft for `channel_id`.
@@ -205,6 +246,127 @@ impl MessageInput {
         }
         self.cursor_pos = pos;
     }
+
+    // --- autocomplete helpers ---
+
+    /// Scan backward from cursor to detect an active autocomplete trigger.
+    ///
+    /// Returns `Some((trigger_char, trigger_pos, query))` when the cursor is
+    /// inside a `@<word>` or `:<word>` run with at least one query character.
+    fn detect_trigger(&self) -> Option<(char, usize, String)> {
+        if self.cursor_pos == 0 {
+            return None;
+        }
+        let chars: Vec<char> = self.content.chars().collect();
+        let mut pos = self.cursor_pos;
+
+        // Walk backward while we see word chars (alphanumeric or `_`).
+        while pos > 0 && (chars[pos - 1].is_alphanumeric() || chars[pos - 1] == '_') {
+            pos -= 1;
+        }
+
+        // Need at least 1 query character after the trigger.
+        if pos == self.cursor_pos || pos == 0 {
+            return None;
+        }
+
+        let trigger_char = chars[pos - 1];
+        if trigger_char != '@' && trigger_char != ':' {
+            return None;
+        }
+
+        let trigger_pos = pos - 1;
+        let query: String = chars[pos..self.cursor_pos].iter().collect();
+        Some((trigger_char, trigger_pos, query))
+    }
+
+    /// Rebuild the suggestion list from the current autocomplete query and kind.
+    fn update_suggestions(&mut self, store: &Store) {
+        if !self.autocomplete.is_active() {
+            return;
+        }
+
+        let matcher = SkimMatcherV2::default();
+        let query = self.autocomplete.query.clone();
+
+        match self.autocomplete.kind {
+            AutocompleteKind::None => {}
+
+            AutocompleteKind::Mention => {
+                let members = store
+                    .ui
+                    .selected_guild
+                    .and_then(|gid| store.members.get(&gid))
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
+
+                let mut scored: Vec<(i64, String, String)> = members
+                    .iter()
+                    .filter_map(|m| {
+                        matcher
+                            .fuzzy_match(&m.name, &query)
+                            .map(|score| (score, m.name.clone(), format!("<@{}>", m.id)))
+                    })
+                    .collect();
+                scored.sort_by(|a, b| b.0.cmp(&a.0));
+                self.autocomplete.suggestions = scored
+                    .into_iter()
+                    .take(MAX_SUGGESTIONS)
+                    .map(|(_, disp, ins)| (disp, ins))
+                    .collect();
+            }
+
+            AutocompleteKind::Emoji => {
+                let mut scored: Vec<(i64, &str, &str)> = EMOJI_DATA
+                    .iter()
+                    .filter_map(|(name, ch)| {
+                        matcher
+                            .fuzzy_match(name, &query)
+                            .map(|score| (score, *name, *ch))
+                    })
+                    .collect();
+                scored.sort_by(|a, b| b.0.cmp(&a.0));
+                self.autocomplete.suggestions = scored
+                    .into_iter()
+                    .take(MAX_SUGGESTIONS)
+                    .map(|(_, name, ch)| (format!("{} :{name}:", ch), ch.to_string()))
+                    .collect();
+            }
+        }
+
+        // Clamp selection index.
+        if self.autocomplete.suggestions.is_empty() {
+            self.autocomplete.selected = 0;
+        } else if self.autocomplete.selected >= self.autocomplete.suggestions.len() {
+            self.autocomplete.selected = self.autocomplete.suggestions.len() - 1;
+        }
+    }
+
+    /// Replace the trigger + query range with the selected suggestion's insert text.
+    fn apply_suggestion(&mut self) {
+        if !self.autocomplete.is_active() || self.autocomplete.suggestions.is_empty() {
+            return;
+        }
+
+        let insert_text = self.autocomplete.suggestions[self.autocomplete.selected]
+            .1
+            .clone();
+        let trigger_pos = self.autocomplete.trigger_pos;
+
+        // Remove from trigger_pos to cursor_pos (inclusive of the trigger char).
+        let byte_start = self.char_to_byte(trigger_pos);
+        let byte_end = self.char_to_byte(self.cursor_pos);
+        self.content.drain(byte_start..byte_end);
+        self.cursor_pos = trigger_pos;
+
+        // Insert the replacement followed by a space.
+        let with_space = format!("{} ", insert_text);
+        let byte_pos = self.char_to_byte(self.cursor_pos);
+        self.content.insert_str(byte_pos, &with_space);
+        self.cursor_pos += with_space.chars().count();
+
+        self.autocomplete = AutocompleteState::inactive();
+    }
 }
 
 impl Component for MessageInput {
@@ -262,6 +424,79 @@ impl Component for MessageInput {
             return Ok(None);
         }
 
+        // --- Intercept keys when the autocomplete popup is active ---
+        if self.autocomplete.is_active() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.autocomplete = AutocompleteState::inactive();
+                    return Ok(None);
+                }
+
+                KeyCode::Down => {
+                    if !self.autocomplete.suggestions.is_empty() {
+                        self.autocomplete.selected =
+                            (self.autocomplete.selected + 1) % self.autocomplete.suggestions.len();
+                    }
+                    return Ok(None);
+                }
+
+                KeyCode::Up => {
+                    if !self.autocomplete.suggestions.is_empty() {
+                        let len = self.autocomplete.suggestions.len();
+                        self.autocomplete.selected = (self.autocomplete.selected + len - 1) % len;
+                    }
+                    return Ok(None);
+                }
+
+                KeyCode::Enter | KeyCode::Tab => {
+                    self.apply_suggestion();
+                    return Ok(None);
+                }
+
+                KeyCode::Backspace => {
+                    self.delete_before();
+                    if let Some((trigger_char, trigger_pos, query)) = self.detect_trigger() {
+                        self.autocomplete.trigger_pos = trigger_pos;
+                        self.autocomplete.query = query;
+                        self.autocomplete.kind = if trigger_char == '@' {
+                            AutocompleteKind::Mention
+                        } else {
+                            AutocompleteKind::Emoji
+                        };
+                        self.update_suggestions(store);
+                    } else {
+                        self.autocomplete = AutocompleteState::inactive();
+                    }
+                    return Ok(None);
+                }
+
+                KeyCode::Char(ch)
+                    if key.modifiers == KeyModifiers::NONE
+                        || key.modifiers == KeyModifiers::SHIFT =>
+                {
+                    self.insert_char(ch);
+                    if let Some((trigger_char, trigger_pos, query)) = self.detect_trigger() {
+                        self.autocomplete.trigger_pos = trigger_pos;
+                        self.autocomplete.query = query;
+                        self.autocomplete.kind = if trigger_char == '@' {
+                            AutocompleteKind::Mention
+                        } else {
+                            AutocompleteKind::Emoji
+                        };
+                        self.update_suggestions(store);
+                    } else {
+                        self.autocomplete = AutocompleteState::inactive();
+                    }
+                    return Ok(None);
+                }
+
+                // Any other key dismisses the popup and falls through to normal handling.
+                _ => {
+                    self.autocomplete = AutocompleteState::inactive();
+                }
+            }
+        }
+
         match key.code {
             // Esc -> back to channel tree, cancel reply/edit
             KeyCode::Esc => {
@@ -306,6 +541,23 @@ impl Component for MessageInput {
                     self.insert_char('\n');
                 } else if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT {
                     self.insert_char(ch);
+
+                    // Check whether we just triggered autocomplete.
+                    if let Some((trigger_char, trigger_pos, query)) = self.detect_trigger() {
+                        self.autocomplete = AutocompleteState {
+                            kind: if trigger_char == '@' {
+                                AutocompleteKind::Mention
+                            } else {
+                                AutocompleteKind::Emoji
+                            },
+                            query,
+                            trigger_pos,
+                            suggestions: Vec::new(),
+                            selected: 0,
+                        };
+                        self.update_suggestions(store);
+                    }
+
                     // Emit a typing indicator if we haven't sent one recently.
                     let should_send = self
                         .last_typing_sent
@@ -511,6 +763,63 @@ impl Component for MessageInput {
                     x: inner.x,
                     y: inner.y,
                 });
+            }
+        }
+
+        // --- Render autocomplete popup ---
+        if self.autocomplete.is_active() && !self.autocomplete.suggestions.is_empty() {
+            let suggestion_count = self.autocomplete.suggestions.len().min(MAX_SUGGESTIONS) as u16;
+            // popup height = border (top+bottom) + one row per suggestion
+            let popup_height = suggestion_count + 2;
+            // popup width: fit the longest display text + padding + borders
+            let max_display_len = self
+                .autocomplete
+                .suggestions
+                .iter()
+                .map(|(d, _)| d.chars().count())
+                .max()
+                .unwrap_or(10) as u16;
+            let popup_width = (max_display_len + 4).max(20).min(area.width);
+
+            // Position popup just above the input area.
+            let popup_y = input_area.y.saturating_sub(popup_height);
+            let popup_x = area.x;
+
+            let popup_area = Rect {
+                x: popup_x,
+                y: popup_y,
+                width: popup_width,
+                height: popup_height,
+            };
+
+            // Only render when there is room above the input.
+            if popup_y < input_area.y {
+                let items: Vec<ListItem> = self
+                    .autocomplete
+                    .suggestions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (display, _))| {
+                        let style = if i == self.autocomplete.selected {
+                            Style::default()
+                                .bg(theme::ACCENT)
+                                .fg(theme::TEXT_PRIMARY)
+                        } else {
+                            Style::default()
+                                .bg(theme::BG_SECONDARY)
+                                .fg(theme::TEXT_PRIMARY)
+                        };
+                        ListItem::new(format!(" {} ", display)).style(style)
+                    })
+                    .collect();
+
+                let popup_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme::ACCENT))
+                    .style(Style::default().bg(theme::BG_SECONDARY));
+
+                let list = List::new(items).block(popup_block);
+                frame.render_widget(list, popup_area);
             }
         }
     }
@@ -890,5 +1199,88 @@ mod tests {
         assert_eq!(input.char_to_byte(0), 0);
         assert_eq!(input.char_to_byte(1), 3);
         assert_eq!(input.char_to_byte(5), 15);
+    }
+
+    // --- autocomplete trigger detection ---
+
+    #[test]
+    fn test_detect_trigger_mention() {
+        let mut input = MessageInput::new();
+        input.content = "hello @ali".to_string();
+        input.cursor_pos = 10;
+        let result = input.detect_trigger();
+        assert!(result.is_some());
+        let (trigger, pos, query) = result.unwrap();
+        assert_eq!(trigger, '@');
+        assert_eq!(pos, 6);
+        assert_eq!(query, "ali");
+    }
+
+    #[test]
+    fn test_detect_trigger_emoji() {
+        let mut input = MessageInput::new();
+        input.content = ":fir".to_string();
+        input.cursor_pos = 4;
+        let result = input.detect_trigger();
+        assert!(result.is_some());
+        let (trigger, pos, query) = result.unwrap();
+        assert_eq!(trigger, ':');
+        assert_eq!(pos, 0);
+        assert_eq!(query, "fir");
+    }
+
+    #[test]
+    fn test_detect_trigger_no_trigger_just_word() {
+        let mut input = MessageInput::new();
+        input.content = "hello".to_string();
+        input.cursor_pos = 5;
+        assert!(input.detect_trigger().is_none());
+    }
+
+    #[test]
+    fn test_detect_trigger_only_at_sign() {
+        // Trigger char alone with no following query should NOT activate autocomplete.
+        let mut input = MessageInput::new();
+        input.content = "@".to_string();
+        input.cursor_pos = 1;
+        assert!(input.detect_trigger().is_none());
+    }
+
+    // --- autocomplete apply_suggestion ---
+
+    #[test]
+    fn test_apply_suggestion_mention() {
+        let mut input = MessageInput::new();
+        input.content = "hello @ali".to_string();
+        input.cursor_pos = 10;
+        input.autocomplete = AutocompleteState {
+            kind: AutocompleteKind::Mention,
+            query: "ali".to_string(),
+            trigger_pos: 6,
+            suggestions: vec![("alice".to_string(), "<@123456>".to_string())],
+            selected: 0,
+        };
+        input.apply_suggestion();
+        assert_eq!(input.content, "hello <@123456> ");
+        assert_eq!(input.cursor_pos, input.content.chars().count());
+        assert!(!input.autocomplete.is_active());
+    }
+
+    #[test]
+    fn test_apply_suggestion_emoji() {
+        let mut input = MessageInput::new();
+        input.content = ":fir".to_string();
+        input.cursor_pos = 4;
+        input.autocomplete = AutocompleteState {
+            kind: AutocompleteKind::Emoji,
+            query: "fir".to_string(),
+            trigger_pos: 0,
+            suggestions: vec![("🔥 :fire:".to_string(), "🔥".to_string())],
+            selected: 0,
+        };
+        input.apply_suggestion();
+        assert_eq!(input.content, "🔥 ");
+        assert_eq!(input.cursor_pos, input.content.chars().count());
+        assert!(!input.autocomplete.is_active());
     }
 }
