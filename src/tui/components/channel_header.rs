@@ -116,7 +116,7 @@ fn resolve_channel_info(store: &Store) -> (String, Option<String>) {
     };
 
     match guild.channels.iter().find(|ch| ch.id == channel_id) {
-        Some(ch) => (ch.name.clone(), None), // ChannelInfo doesn't store topic
+        Some(ch) => (ch.name.clone(), ch.topic.clone()),
         None => ("No channel".to_string(), None),
     }
 }

@@ -17,6 +17,8 @@ pub struct ChannelInfo {
     pub kind: ChannelKind,
     pub category_id: Option<Id<ChannelMarker>>,
     pub position: i32,
+    /// Channel topic/description (text channels only).
+    pub topic: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +161,7 @@ mod tests {
             kind,
             category_id: category_id.map(ch_id),
             position,
+            topic: None,
         }
     }
 
