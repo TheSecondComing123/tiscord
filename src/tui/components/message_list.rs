@@ -71,6 +71,11 @@ impl MessageList {
         buffer.messages().get(index)
     }
 
+    /// Return the absolute timestamp string (ISO 8601) of the selected message.
+    pub fn get_selected_timestamp(&self, store: &Store) -> Option<String> {
+        self.get_selected_message(store).map(|m| m.timestamp.clone())
+    }
+
     /// Reset selection and fetching state. Called when switching to a different channel.
     pub fn reset(&self) {
         self.selected_index.set(None);

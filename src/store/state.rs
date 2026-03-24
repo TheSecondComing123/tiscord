@@ -84,6 +84,12 @@ pub struct UiState {
     pub message_pane_stack: Vec<PaneView>,
     /// The current user's own presence status (cycled with Ctrl+S).
     pub own_status: OwnStatus,
+    /// Timestamp of the currently selected message (set by MessageList during render).
+    pub selected_message_timestamp: Option<String>,
+    /// The user's current custom status text (set via Ctrl+Shift+S).
+    pub custom_status_text: Option<String>,
+    /// When Some, the custom-status input bar is open; value is the text being typed.
+    pub custom_status_input: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +114,9 @@ impl Default for UiState {
             editing_message: None,
             message_pane_stack: Vec::new(),
             own_status: OwnStatus::Online,
+            selected_message_timestamp: None,
+            custom_status_text: None,
+            custom_status_input: None,
         }
     }
 }

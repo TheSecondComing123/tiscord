@@ -1,8 +1,12 @@
+use std::io;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use chrono;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::execute;
+use crossterm::terminal::SetTitle;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use tokio::sync::mpsc;
@@ -179,7 +183,8 @@ impl App {
                     } // end else (not connecting)
 
                     // Status bar
-                    render_status_bar(frame, status_area, &store, error_ref);
+                    let selected_ts = message_pane_ref.message_list.get_selected_timestamp(&store);
+                    render_status_bar(frame, status_area, &store, error_ref, selected_ts.as_deref());
 
                     // Overlay: command palette (rendered on top of everything else).
                     if command_palette_ref.is_visible() {
@@ -206,6 +211,20 @@ impl App {
                         profile_overlay_ref.render(frame, area, &store);
                     }
                 })?;
+
+                // Update the terminal window title with unread / mention counts.
+                let (total_unread, total_mentions) = store.notifications.total_counts();
+                let title = if total_unread == 0 && total_mentions == 0 {
+                    "tiscord".to_string()
+                } else if total_mentions > 0 {
+                    format!("tiscord ({} unread, {} mention{})",
+                        total_unread,
+                        total_mentions,
+                        if total_mentions == 1 { "" } else { "s" })
+                } else {
+                    format!("tiscord ({} unread)", total_unread)
+                };
+                let _ = execute!(io::stdout(), SetTitle(title));
             }
 
             // Poll terminal events
@@ -332,7 +351,7 @@ impl App {
                     }
                     return Ok(());
                 }
-                KeyCode::Char('s') => {
+                KeyCode::Char('s') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                     // Ctrl+S: cycle own presence status Online → Idle → DND → Invisible → Online
                     let new_status = {
                         let mut store = self.store.write().unwrap();
@@ -342,6 +361,19 @@ impl App {
                     let _ = self.action_tx.send(Action::SetStatus {
                         status: new_status.as_str().to_string(),
                     });
+                    return Ok(());
+                }
+                KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    // Ctrl+Shift+S: open custom status input in the status bar area
+                    let mut store = self.store.write().unwrap();
+                    if store.ui.custom_status_input.is_some() {
+                        // Dismiss if already open
+                        store.ui.custom_status_input = None;
+                    } else {
+                        // Pre-fill with existing custom status text
+                        let existing = store.ui.custom_status_text.clone().unwrap_or_default();
+                        store.ui.custom_status_input = Some(existing);
+                    }
                     return Ok(());
                 }
                 _ => {}
@@ -560,6 +592,7 @@ fn render_status_bar(
     area: Rect,
     store: &Store,
     error_message: &Option<(String, std::time::Instant)>,
+    selected_message_timestamp: Option<&str>,
 ) {
     use ratatui::widgets::Paragraph;
 
@@ -649,7 +682,7 @@ fn render_status_bar(
         Span::styled(center_text, status_bg.fg(theme::TEXT_SECONDARY))
     };
 
-    // Right section: focused panel
+    // Right section: focused panel + selected message timestamp.
     let (focus_text, focus_color) = match store.ui.focus {
         FocusTarget::ServerList => ("SERVERS", theme::TEXT_SECONDARY),
         FocusTarget::ChannelTree => ("CHANNELS", theme::TEXT_SECONDARY),
@@ -661,10 +694,21 @@ fn render_status_bar(
         FocusTarget::SearchOverlay => ("SEARCH", theme::ACCENT),
         FocusTarget::ProfileOverlay => ("PROFILE", theme::ACCENT),
     };
-    let right_span = Span::styled(
-        format!(" {focus_text} "),
-        status_bg.fg(focus_color),
-    );
+    let right_span = if let Some(ts) = selected_message_timestamp {
+        // Format the absolute timestamp for the selected message.
+        let abs_ts = chrono::DateTime::parse_from_rfc3339(ts)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|_| ts.to_string());
+        Span::styled(
+            format!(" {} {} ", focus_text, abs_ts),
+            status_bg.fg(focus_color),
+        )
+    } else {
+        Span::styled(
+            format!(" {focus_text} "),
+            status_bg.fg(focus_color),
+        )
+    };
 
     // Split the status bar into three equal columns.
     let cols = Layout::horizontal([
