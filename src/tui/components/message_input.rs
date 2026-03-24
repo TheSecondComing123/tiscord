@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
@@ -9,11 +11,16 @@ use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
 use crate::tui::theme;
 
+/// Discord typing indicators should not be sent more than once per 10 seconds.
+const TYPING_THROTTLE: Duration = Duration::from_secs(10);
+
 pub struct MessageInput {
     /// Content of the input buffer.
     content: String,
     /// Cursor position as a character index (not byte index).
     cursor_pos: usize,
+    /// Timestamp of when we last sent a typing indicator for the current channel.
+    last_typing_sent: Option<Instant>,
 }
 
 impl MessageInput {
@@ -21,6 +28,7 @@ impl MessageInput {
         Self {
             content: String::new(),
             cursor_pos: 0,
+            last_typing_sent: None,
         }
     }
 
@@ -189,6 +197,17 @@ impl Component for MessageInput {
                     self.insert_char('\n');
                 } else if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT {
                     self.insert_char(ch);
+                    // Emit a typing indicator if we haven't sent one recently.
+                    let should_send = self
+                        .last_typing_sent
+                        .map(|t| t.elapsed() >= TYPING_THROTTLE)
+                        .unwrap_or(true);
+                    if should_send {
+                        if let Some(channel_id) = store.ui.selected_channel {
+                            self.last_typing_sent = Some(Instant::now());
+                            return Ok(Some(Action::SendTyping { channel_id }));
+                        }
+                    }
                 }
             }
 

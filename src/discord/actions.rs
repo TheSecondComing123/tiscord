@@ -87,6 +87,10 @@ pub enum Action {
     },
     /// Fetch DM channels via REST (GET /users/@me/channels).
     FetchDmChannels,
+    /// Send a typing indicator for the given channel (POST /channels/{id}/typing).
+    SendTyping {
+        channel_id: Id<ChannelMarker>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -424,6 +428,11 @@ pub async fn run_action_handler(
                             message: "Failed to load user profile".to_string(),
                         });
                     }
+                }
+            }
+            Action::SendTyping { channel_id } => {
+                if let Err(e) = http.create_typing_trigger(channel_id).await {
+                    tracing::debug!("failed to send typing trigger: {e}");
                 }
             }
             Action::FetchDmChannels => {
