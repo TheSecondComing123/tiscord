@@ -28,6 +28,7 @@ chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+notify-rust = "4"
 
 [patch.crates-io]
 twilight-gateway = { path = "patches/twilight-gateway" }

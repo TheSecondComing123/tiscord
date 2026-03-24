@@ -47,6 +47,8 @@ pub struct App {
     pins_overlay: PinsOverlay,
     profile_overlay: ProfileOverlay,
     error_message: Option<(String, Instant)>,
+    /// Tracks when typing indicators were last cleaned up.
+    last_typing_cleanup: Instant,
 }
 
 impl App {
@@ -74,6 +76,7 @@ impl App {
             pins_overlay: PinsOverlay::new(),
             profile_overlay: ProfileOverlay::new(),
             error_message: None,
+            last_typing_cleanup: Instant::now(),
         }
     }
 
@@ -95,6 +98,18 @@ impl App {
                 if let Some(msg) = store.last_toast.take() {
                     self.error_message = Some((msg, Instant::now()));
                 }
+                // Fire desktop notification if a mention was received and the user has
+                // desktop notifications enabled in config.
+                if self.config.notifications.desktop {
+                    if let Some(notif) = store.pending_notification.take() {
+                        let summary = format!("@{}", notif.author);
+                        let body = notif.content.clone();
+                        let _ = notify_rust::Notification::new()
+                            .summary(&summary)
+                            .body(&body)
+                            .show();
+                    }
+                }
             }
 
             // Auto-clear error messages older than 5 seconds.
@@ -102,6 +117,12 @@ impl App {
                 if ts.elapsed() >= Duration::from_secs(5) {
                     self.error_message = None;
                 }
+            }
+
+            // Periodically clean up expired typing indicators (every 5 seconds).
+            if self.last_typing_cleanup.elapsed() >= Duration::from_secs(5) {
+                self.store.write().unwrap().typing.cleanup();
+                self.last_typing_cleanup = Instant::now();
             }
 
             // Render
@@ -655,8 +676,18 @@ fn render_status_bar(
         Span::raw(" "),
     ]);
 
-    // Center section: error message (if active) or typing indicator or guild > channel
-    let center_span = if let Some((msg, _)) = error_message {
+    // Center section: custom status input (if open) > error message > typing > guild > channel
+    let center_span = if let Some(ref input_text) = store.ui.custom_status_input {
+        Span::styled(
+            format!("Status: {}█", input_text),
+            status_bg.fg(theme::ACCENT),
+        )
+    } else if let Some(ref cs_text) = store.ui.custom_status_text {
+        Span::styled(
+            format!("✏ {cs_text}"),
+            status_bg.fg(theme::TEXT_SECONDARY),
+        )
+    } else if let Some((msg, _)) = error_message {
         Span::styled(
             msg.clone(),
             status_bg.fg(theme::DND),

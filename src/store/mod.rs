@@ -60,6 +60,13 @@ pub struct DmChannel {
     pub last_message_preview: Option<String>,
 }
 
+/// Data passed to App for sending a desktop notification on a mention.
+#[derive(Debug, Clone)]
+pub struct NotificationInfo {
+    pub author: String,
+    pub content: String,
+}
+
 pub struct Store {
     pub guilds: guilds::GuildState,
     pub guild_folders: Vec<GuildFolder>,
@@ -89,6 +96,8 @@ pub struct Store {
     pub last_toast: Option<String>,
     /// True while a file upload is in progress (used to show "Uploading..." in status bar).
     pub uploading_file: bool,
+    /// Pending desktop notification to be fired by App on the next tick (after a mention).
+    pub pending_notification: Option<NotificationInfo>,
 }
 
 impl Store {
@@ -114,6 +123,7 @@ impl Store {
             last_error: None,
             last_toast: None,
             uploading_file: false,
+            pending_notification: None,
         }
     }
 
@@ -313,6 +323,12 @@ impl Store {
                         let mention_token = format!("<@{}>", uid);
                         if msg.content.contains(&mention_token) {
                             self.notifications.increment_mentions(channel_id);
+                            // Queue a desktop notification to be fired by App.
+                            let preview = truncate_preview(&msg.content, 120);
+                            self.pending_notification = Some(NotificationInfo {
+                                author: msg.author.name.clone(),
+                                content: preview,
+                            });
                         }
                     }
                 }
@@ -372,6 +388,10 @@ impl Store {
                         }).collect(),
                         footer: e.footer.as_ref().map(|f| f.text.clone()),
                         author_name: e.author.as_ref().map(|a| a.name.clone()),
+                    }).collect(),
+                    stickers: msg.sticker_items.iter().map(|s| messages::StickerInfo {
+                        name: s.name.clone(),
+                        format: format!("{:?}", s.format_type),
                     }).collect(),
                 };
                 self.get_or_create_message_buffer(channel_id).push(stored);
@@ -480,6 +500,10 @@ impl Store {
                             }).collect(),
                             footer: e.footer.as_ref().map(|f| f.text.clone()),
                             author_name: e.author.as_ref().map(|a| a.name.clone()),
+                        }).collect(),
+                        stickers: msg.sticker_items.iter().map(|s| messages::StickerInfo {
+                            name: s.name.clone(),
+                            format: format!("{:?}", s.format_type),
                         }).collect(),
                     })
                     .collect();
@@ -741,6 +765,7 @@ mod tests {
                 is_edited: false,
                 reactions: vec![],
                 embeds: vec![],
+                stickers: vec![],
             };
             store.get_or_create_message_buffer(channel_id).push(msg);
         }
@@ -759,6 +784,7 @@ mod tests {
                 is_edited: false,
                 reactions: vec![],
                 embeds: vec![],
+                stickers: vec![],
             })
             .collect();
         store
