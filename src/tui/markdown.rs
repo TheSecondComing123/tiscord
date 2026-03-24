@@ -147,13 +147,27 @@ pub fn parse(input: &str) -> Vec<Span<'_>> {
             }
         }
 
-        // ── user mention  <@id> ──────────────────────────────────────────────
+        // ── role mention  <@&id> ─────────────────────────────────────────────
+        if bytes[i] == b'<' && i + 2 < len && bytes[i + 1] == b'@' && bytes[i + 2] == b'&' {
+            if let Some(close) = find_byte(bytes, b'>', i + 3) {
+                flush_plain!(i);
+                spans.push(Span::styled(
+                    "@role",
+                    Style::default().fg(theme::ACCENT),
+                ));
+                i = close + 1;
+                plain_start = i;
+                continue;
+            }
+        }
+
+        // ── user mention  <@id> or <@!id> ────────────────────────────────────
         if bytes[i] == b'<' && i + 1 < len && bytes[i + 1] == b'@' {
             if let Some(close) = find_byte(bytes, b'>', i + 2) {
                 flush_plain!(i);
                 spans.push(Span::styled(
-                    "@user",
-                    Style::default().fg(theme::MENTION),
+                    "@mention",
+                    Style::default().fg(theme::ACCENT),
                 ));
                 i = close + 1;
                 plain_start = i;
@@ -167,7 +181,7 @@ pub fn parse(input: &str) -> Vec<Span<'_>> {
                 flush_plain!(i);
                 spans.push(Span::styled(
                     "#channel",
-                    Style::default().fg(theme::MENTION),
+                    Style::default().fg(theme::ACCENT),
                 ));
                 i = close + 1;
                 plain_start = i;
@@ -291,15 +305,30 @@ mod tests {
     #[test]
     fn user_mention() {
         let spans = parse("<@123456>");
-        assert_eq!(content(&spans), vec!["@user"]);
-        assert_eq!(spans[0].style.fg, Some(theme::MENTION));
+        assert_eq!(content(&spans), vec!["@mention"]);
+        assert_eq!(spans[0].style.fg, Some(theme::ACCENT));
+    }
+
+    #[test]
+    fn user_mention_nickname() {
+        // <@!id> is a nickname/member mention
+        let spans = parse("<@!789>");
+        assert_eq!(content(&spans), vec!["@mention"]);
+        assert_eq!(spans[0].style.fg, Some(theme::ACCENT));
+    }
+
+    #[test]
+    fn role_mention() {
+        let spans = parse("<@&111>");
+        assert_eq!(content(&spans), vec!["@role"]);
+        assert_eq!(spans[0].style.fg, Some(theme::ACCENT));
     }
 
     #[test]
     fn channel_mention() {
         let spans = parse("<#456>");
         assert_eq!(content(&spans), vec!["#channel"]);
-        assert_eq!(spans[0].style.fg, Some(theme::MENTION));
+        assert_eq!(spans[0].style.fg, Some(theme::ACCENT));
     }
 
     #[test]
