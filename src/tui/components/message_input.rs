@@ -1279,6 +1279,42 @@ mod tests {
         assert!(input.detect_trigger().is_none());
     }
 
+    #[test]
+    fn test_detect_trigger_channel() {
+        let mut input = MessageInput::new();
+        input.content = "see #general".to_string();
+        input.cursor_pos = 12;
+        let result = input.detect_trigger();
+        assert!(result.is_some());
+        let (trigger, pos, query) = result.unwrap();
+        assert_eq!(trigger, '#');
+        assert_eq!(pos, 4);
+        assert_eq!(query, "general");
+    }
+
+    #[test]
+    fn test_detect_trigger_channel_with_hyphen() {
+        // Channel names with hyphens (e.g. "general-chat") should be included in the query.
+        let mut input = MessageInput::new();
+        input.content = "#general-chat".to_string();
+        input.cursor_pos = 13;
+        let result = input.detect_trigger();
+        assert!(result.is_some());
+        let (trigger, pos, query) = result.unwrap();
+        assert_eq!(trigger, '#');
+        assert_eq!(pos, 0);
+        assert_eq!(query, "general-chat");
+    }
+
+    #[test]
+    fn test_detect_trigger_channel_only_hash_no_autocomplete() {
+        // '#' alone with no following text should NOT activate autocomplete.
+        let mut input = MessageInput::new();
+        input.content = "#".to_string();
+        input.cursor_pos = 1;
+        assert!(input.detect_trigger().is_none());
+    }
+
     // --- autocomplete apply_suggestion ---
 
     #[test]
