@@ -46,6 +46,13 @@ impl NotificationState {
             .map(|n| n.mention_count > 0)
             .unwrap_or(false)
     }
+
+    /// Return (total_unread, total_mentions) summed across all channels.
+    pub fn total_counts(&self) -> (u32, u32) {
+        self.channels.values().fold((0, 0), |(u, m), n| {
+            (u + n.unread_count, m + n.mention_count)
+        })
+    }
 }
 
 #[cfg(test)]

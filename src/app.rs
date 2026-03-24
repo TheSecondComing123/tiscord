@@ -312,6 +312,44 @@ impl App {
             return Ok(());
         }
 
+        // Custom status input mode: intercept all keys when the status bar input is open
+        {
+            let is_input_open = {
+                let store = self.store.read().unwrap();
+                store.ui.custom_status_input.is_some()
+            };
+            if is_input_open {
+                let mut store = self.store.write().unwrap();
+                match key.code {
+                    KeyCode::Esc => {
+                        store.ui.custom_status_input = None;
+                    }
+                    KeyCode::Enter => {
+                        if let Some(text) = store.ui.custom_status_input.take() {
+                            let trimmed = text.trim().to_string();
+                            store.ui.custom_status_text = if trimmed.is_empty() { None } else { Some(trimmed.clone()) };
+                            let _ = self.action_tx.send(Action::SetCustomStatus {
+                                emoji: None,
+                                text: if trimmed.is_empty() { None } else { Some(trimmed) },
+                            });
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if let Some(ref mut text) = store.ui.custom_status_input {
+                            text.pop();
+                        }
+                    }
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Some(ref mut text) = store.ui.custom_status_input {
+                            text.push(c);
+                        }
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+        }
+
         // Global shortcuts (Ctrl+key)
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
