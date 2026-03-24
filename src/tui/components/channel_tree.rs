@@ -300,27 +300,28 @@ impl Component for ChannelTree {
                             let has_mention = store.notifications.has_mentions(ch.id);
                             let has_slowmode =
                                 ch.rate_limit_per_user.map(|r| r > 0).unwrap_or(false);
+                            let is_muted = store.is_channel_muted(ch.id, store.ui.selected_guild);
 
-                            let name = if ch.nsfw {
-                                if has_slowmode {
-                                    format!("🔞 {} \u{1f40c}", ch.name)
-                                } else {
-                                    format!("🔞 {}", ch.name)
-                                }
-                            } else if has_slowmode {
-                                format!("# {} \u{1f40c}", ch.name)
+                            let prefix = if is_muted {
+                                "\u{1f507} "
+                            } else if ch.nsfw {
+                                "🔞 "
                             } else {
-                                format!("# {}", ch.name)
+                                "# "
                             };
+                            let suffix = if has_slowmode && !is_muted { " \u{1f40c}" } else { "" };
+                            let name = format!("{}{}{}", prefix, ch.name, suffix);
 
                             let has_typers = store.typing.has_typers(ch.id);
 
                             let base_style = if is_cursor {
                                 theme::selected()
+                            } else if is_muted {
+                                theme::muted().add_modifier(Modifier::DIM)
                             } else {
                                 theme::secondary_text()
                             };
-                            let name_style = if has_unread || has_mention {
+                            let name_style = if !is_muted && (has_unread || has_mention) {
                                 base_style.add_modifier(Modifier::BOLD)
                             } else {
                                 base_style
@@ -328,14 +329,14 @@ impl Component for ChannelTree {
 
                             let mut spans = vec![Span::styled(name, name_style)];
 
-                            if has_typers {
+                            if has_typers && !is_muted {
                                 spans.push(Span::styled(
                                     " \u{22ef}",
                                     theme::muted().add_modifier(Modifier::DIM),
                                 ));
                             }
 
-                            if has_mention {
+                            if has_mention && !is_muted {
                                 let count = store
                                     .notifications
                                     .get(ch.id)
