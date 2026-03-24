@@ -85,6 +85,12 @@ pub fn render_message_full(msg: &StoredMessage, _width: u16, thread: Option<&Thr
         lines.push(Line::from(Span::styled(text, theme::secondary_text())));
     }
 
+    // ── stickers ─────────────────────────────────────────────────────────────
+    for sticker in &msg.stickers {
+        let text = format!("[sticker: {}]", sticker.name);
+        lines.push(Line::from(Span::styled(text, theme::secondary_text())));
+    }
+
     // ── embeds ────────────────────────────────────────────────────────────────
     for embed in &msg.embeds {
         let bar = "│ ";
@@ -203,6 +209,7 @@ mod tests {
             is_edited: false,
             reactions: vec![],
             embeds: vec![],
+            stickers: vec![],
         }
     }
 

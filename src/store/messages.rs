@@ -3,6 +3,12 @@ use twilight_model::id::marker::{MessageMarker, UserMarker};
 use twilight_model::id::Id;
 
 #[derive(Debug, Clone)]
+pub struct StickerInfo {
+    pub name: String,
+    pub format: String,
+}
+
+#[derive(Debug, Clone)]
 pub enum ReactionEmoji {
     Unicode(String),
     Custom { id: u64, name: String },
@@ -45,6 +51,7 @@ pub struct StoredMessage {
     pub is_edited: bool,
     pub reactions: Vec<Reaction>,
     pub embeds: Vec<Embed>,
+    pub stickers: Vec<StickerInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +184,7 @@ mod tests {
             is_edited: false,
             reactions: vec![],
             embeds: vec![],
+            stickers: vec![],
         }
     }
 

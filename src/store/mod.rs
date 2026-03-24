@@ -8,7 +8,7 @@ pub mod state;
 pub mod typing;
 pub mod voice;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use twilight_model::channel::ChannelType;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 use twilight_model::id::Id;
@@ -98,6 +98,10 @@ pub struct Store {
     pub uploading_file: bool,
     /// Pending desktop notification to be fired by App on the next tick (after a mention).
     pub pending_notification: Option<NotificationInfo>,
+    /// Channels the user has locally muted. Muted channels don't accumulate unreads/mentions.
+    pub muted_channels: HashSet<Id<ChannelMarker>>,
+    /// Guilds the user has locally muted. All channels in a muted guild are treated as muted.
+    pub muted_guilds: HashSet<Id<GuildMarker>>,
 }
 
 impl Store {
@@ -124,6 +128,8 @@ impl Store {
             last_toast: None,
             uploading_file: false,
             pending_notification: None,
+            muted_channels: HashSet::new(),
+            muted_guilds: HashSet::new(),
         }
     }
 
@@ -134,6 +140,25 @@ impl Store {
         self.messages
             .entry(channel_id)
             .or_insert_with(|| messages::MessageBuffer::new(500))
+    }
+
+    /// Toggle mute state for a channel. Returns `true` if the channel is now muted.
+    pub fn toggle_mute_channel(&mut self, channel_id: Id<ChannelMarker>) -> bool {
+        if self.muted_channels.contains(&channel_id) {
+            self.muted_channels.remove(&channel_id);
+            false
+        } else {
+            self.muted_channels.insert(channel_id);
+            true
+        }
+    }
+
+    /// Whether the given channel is muted (directly or via its guild).
+    pub fn is_channel_muted(&self, channel_id: Id<ChannelMarker>, guild_id: Option<Id<GuildMarker>>) -> bool {
+        self.muted_channels.contains(&channel_id)
+            || guild_id
+                .map(|gid| self.muted_guilds.contains(&gid))
+                .unwrap_or(false)
     }
 
     pub fn process_discord_event(&mut self, event: DiscordEvent) {
@@ -314,9 +339,15 @@ impl Store {
             DiscordEvent::MessageCreate(msg) => {
                 let channel_id = msg.channel_id;
 
-                // Notification tracking: only for channels other than the currently selected one
+                // Notification tracking: only for channels other than the currently selected one,
+                // and only when the channel (or its guild) is not muted.
                 let is_selected = self.ui.selected_channel == Some(channel_id);
-                if !is_selected {
+                let guild_id_for_channel = self.ui.selected_guild; // approximation; mute skips anyway
+                let is_muted = self.muted_channels.contains(&channel_id)
+                    || guild_id_for_channel
+                        .map(|gid| self.muted_guilds.contains(&gid))
+                        .unwrap_or(false);
+                if !is_selected && !is_muted {
                     self.notifications.increment_unread(channel_id);
                     // Check for a mention of the current user (<@user_id>)
                     if let Some(uid) = self.current_user_id {
@@ -619,6 +650,10 @@ impl Store {
                         .push(thread);
                 }
             }
+            DiscordEvent::ForumThreadsLoaded { channel_id, threads } => {
+                self.active_threads.insert(channel_id, threads);
+                tracing::debug!("forum threads loaded for channel {channel_id}");
+            }
             DiscordEvent::VoiceStateUpdate { channel_id, user_id, display_name, self_mute, self_deaf } => {
                 let name = if display_name.is_empty() {
                     self.members
@@ -667,6 +702,10 @@ impl Store {
                 self.uploading_file = false;
                 self.last_toast = Some("File sent".to_string());
                 tracing::info!("file upload completed");
+            }
+            DiscordEvent::ForumThreadsLoaded { channel_id, threads } => {
+                self.active_threads.insert(channel_id, threads);
+                tracing::debug!("forum threads loaded for channel {channel_id}");
             }
         }
     }
