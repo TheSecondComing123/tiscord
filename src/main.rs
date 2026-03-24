@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         http,
         action_rx,
         discord_event_tx.clone(),
+        token.clone(),
     ));
 
     // Spawn gateway

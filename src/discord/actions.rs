@@ -97,6 +97,12 @@ pub enum Action {
         file_path: String,
         message: Option<String>,
     },
+    /// Update the current user's own presence/status.
+    /// NOTE: Twilight does not expose a gateway presence update for user accounts.
+    /// The status is tracked locally in UiState; no gateway command is issued.
+    SetStatus {
+        status: String,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -106,6 +112,7 @@ pub async fn run_action_handler(
     http: HttpClient,
     mut action_rx: mpsc::UnboundedReceiver<Action>,
     event_tx: mpsc::UnboundedSender<DiscordEvent>,
+    token: String,
 ) {
     while let Some(action) = action_rx.recv().await {
         match action {
@@ -243,14 +250,62 @@ pub async fn run_action_handler(
                 }
             }
             Action::SearchMessages { scope, query } => {
-                // TODO: Discord's message search REST endpoint is not available through
-                // twilight-http for user accounts. A real implementation would issue a
-                // raw GET request to:
-                //   /guilds/{guild_id}/messages/search?content={query}
-                //   /channels/{channel_id}/messages/search?content={query}
-                // For now we return empty results so the UI infrastructure is exercised.
                 tracing::debug!("search requested: {:?} query={:?}", scope, query);
-                let _ = event_tx.send(DiscordEvent::SearchResults { results: Vec::new() });
+                let url = match &scope {
+                    crate::store::search::SearchScope::CurrentChannel(channel_id) => {
+                        format!(
+                            "https://discord.com/api/v10/channels/{}/messages/search?content={}",
+                            channel_id,
+                            urlencoding_encode(&query)
+                        )
+                    }
+                    crate::store::search::SearchScope::Server(guild_id) => {
+                        format!(
+                            "https://discord.com/api/v10/guilds/{}/messages/search?content={}",
+                            guild_id,
+                            urlencoding_encode(&query)
+                        )
+                    }
+                };
+                let search_client = reqwest::Client::new();
+                match search_client
+                    .get(&url)
+                    .header("Authorization", &token)
+                    .send()
+                    .await
+                {
+                    Ok(response) => {
+                        let status = response.status();
+                        if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::UNAUTHORIZED {
+                            tracing::warn!("search returned {status}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Search not authorized".to_string(),
+                            });
+                        } else if !status.is_success() {
+                            tracing::warn!("search returned {status}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: format!("Search failed: {status}"),
+                            });
+                        } else {
+                            match response.json::<serde_json::Value>().await {
+                                Ok(body) => {
+                                    let results = parse_search_results(&body, &scope);
+                                    let _ = event_tx.send(DiscordEvent::SearchResults { results });
+                                }
+                                Err(e) => {
+                                    tracing::error!("failed to parse search response: {e}");
+                                    let _ = event_tx.send(DiscordEvent::SearchResults { results: Vec::new() });
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("search request failed: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Search request failed".to_string(),
+                        });
+                    }
+                }
             }
             Action::NavigateToSearchResult {
                 channel_id,
@@ -484,6 +539,14 @@ pub async fn run_action_handler(
                     }
                 }
             }
+            Action::SetStatus { status } => {
+                // TODO: Twilight does not support sending a gateway presence update for
+                // user accounts (opcode 3 UPDATE_PRESENCE). The status is stored locally
+                // in UiState::own_status by the App before dispatching this action, so
+                // the status bar reflects the change immediately. A raw WebSocket message
+                // would be needed to actually change the status on Discord's servers.
+                tracing::debug!("SetStatus requested: {status} (local-only; gateway update not yet implemented)");
+            }
             Action::FetchDmChannels => {
                 // twilight-http doesn't expose GET /users/@me/channels.
                 // DM channels are populated from the Ready payload instead.
@@ -520,4 +583,82 @@ pub async fn run_action_handler(
             }
         }
     }
+}
+
+/// Percent-encode a string for use in a URL query parameter.
+fn urlencoding_encode(s: &str) -> String {
+    let mut encoded = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(b as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    encoded
+}
+
+/// Parse Discord search response JSON into SearchResult structs.
+/// Discord returns: `{ messages: [[msg1, ctx1, ...], [msg2, ctx2, ...]], total_results: N }`
+/// The first element of each inner array is the matching message.
+fn parse_search_results(
+    body: &serde_json::Value,
+    scope: &crate::store::search::SearchScope,
+) -> Vec<crate::store::search::SearchResult> {
+    let messages = match body.get("messages").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return Vec::new(),
+    };
+
+    messages
+        .iter()
+        .filter_map(|group| {
+            // Each group is an array; first element is the matching message
+            let msg = group.as_array()?.first()?;
+            let message_id_str = msg.get("id")?.as_str()?;
+            let channel_id_str = msg.get("channel_id")?.as_str()?;
+            let content = msg.get("content")?.as_str().unwrap_or("").to_string();
+            let author_name = msg
+                .get("author")
+                .and_then(|a| a.get("username"))
+                .and_then(|u| u.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let timestamp = msg
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let message_id = message_id_str.parse::<u64>().ok()?;
+            let channel_id = channel_id_str.parse::<u64>().ok()?;
+
+            let channel_name = match scope {
+                crate::store::search::SearchScope::CurrentChannel(_) => {
+                    format!("#{channel_id_str}")
+                }
+                crate::store::search::SearchScope::Server(_) => {
+                    format!("#{channel_id_str}")
+                }
+            };
+
+            let preview = if content.len() > 100 {
+                format!("{}...", &content[..100])
+            } else {
+                content
+            };
+
+            Some(crate::store::search::SearchResult {
+                message_id: twilight_model::id::Id::new(message_id),
+                channel_id: twilight_model::id::Id::new(channel_id),
+                channel_name,
+                author_name,
+                content_preview: preview,
+                timestamp,
+            })
+        })
+        .collect()
 }
