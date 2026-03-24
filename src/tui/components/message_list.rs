@@ -201,6 +201,52 @@ impl Component for MessageList {
 
             // Focus transitions
             (KeyCode::Enter, KeyModifiers::NONE) => {
+                // If the selected message has a reply context, try to scroll to the
+                // original (referenced) message in the buffer. Otherwise, focus input.
+                let reply_msg_id = self
+                    .get_selected_message(store)
+                    .and_then(|m| m.reply_to.as_ref().map(|_| m.id));
+
+                if let Some(sel_id) = reply_msg_id {
+                    // Find the message that this one is replying to. We look for any
+                    // message that appeared *before* the current one with a matching
+                    // content preview or simply the nearest earlier message — since
+                    // we only store a preview, use the message immediately before it.
+                    let channel_id2 = store.ui.active_channel();
+                    if let Some(cid) = channel_id2 {
+                        if let Some(buf) = store.messages.get(&cid) {
+                            let msgs = buf.messages();
+                            // Find the index of the selected message.
+                            if let Some(cur_pos) = msgs.iter().position(|m| m.id == sel_id) {
+                                // The referenced message is somewhere before cur_pos.
+                                // Since we don't store the referenced message id in
+                                // ReplyContext (only author+preview), jump to the
+                                // nearest older message from the same author as shown in
+                                // the reply context.
+                                let reply_author = msgs[cur_pos]
+                                    .reply_to
+                                    .as_ref()
+                                    .map(|r| r.author_name.clone());
+                                let target_idx = if let Some(author) = reply_author {
+                                    // Search backwards for a message by that author.
+                                    msgs.iter()
+                                        .enumerate()
+                                        .take(cur_pos)
+                                        .rev()
+                                        .find(|(_, m)| m.author_name == author)
+                                        .map(|(i, _)| i)
+                                } else {
+                                    None
+                                };
+                                if let Some(idx) = target_idx {
+                                    self.selected_index.set(Some(idx));
+                                    self.auto_scroll.set(false);
+                                    return Ok(None);
+                                }
+                            }
+                        }
+                    }
+                }
                 store.ui.focus = FocusTarget::MessageInput;
             }
             (KeyCode::Esc | KeyCode::Left, KeyModifiers::NONE) => {
