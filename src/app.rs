@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders};
 use tokio::sync::mpsc;
@@ -188,6 +188,9 @@ impl App {
                 match event::read()? {
                     Event::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
                         self.handle_key(key)?;
+                    }
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse(mouse);
                     }
                     _ => {}
                 }
@@ -453,6 +456,30 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn handle_mouse(&mut self, mouse: MouseEvent) {
+        let delta: isize = match mouse.kind {
+            MouseEventKind::ScrollUp => -3,
+            MouseEventKind::ScrollDown => 3,
+            _ => return,
+        };
+
+        let store = self.store.read().unwrap();
+        if let Some(channel_id) = store.ui.active_channel() {
+            if let Some(buffer) = store.messages.get(&channel_id) {
+                let needs_fetch = self.message_pane.message_list.scroll_by(delta, buffer.len());
+                if needs_fetch {
+                    self.message_pane.message_list.set_fetching_history();
+                    let oldest_id = buffer.messages().front().map(|m| m.id);
+                    let _ = self.action_tx.send(Action::FetchMessages {
+                        channel_id,
+                        before: oldest_id,
+                        limit: 50,
+                    });
+                }
+            }
+        }
     }
 }
 
