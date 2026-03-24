@@ -111,6 +111,12 @@ pub enum Action {
         emoji: Option<String>,
         text: Option<String>,
     },
+    /// Fetch active threads for a guild, used when a Forum channel is selected.
+    FetchActiveThreads {
+        guild_id: Id<GuildMarker>,
+        /// The forum channel whose threads are of interest (for routing the response).
+        channel_id: Id<ChannelMarker>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -571,6 +577,41 @@ pub async fn run_action_handler(
                 // DM channels are populated from the Ready payload instead.
                 // This is a no-op fallback if Ready didn't include them.
                 tracing::debug!("FetchDmChannels: DMs loaded from Ready payload");
+            }
+            Action::FetchActiveThreads { guild_id, channel_id } => {
+                match http.active_threads(guild_id).await {
+                    Ok(response) => match response.model().await {
+                        Ok(listing) => {
+                            let threads: Vec<crate::store::ThreadInfo> = listing
+                                .threads
+                                .iter()
+                                .filter(|t| t.parent_id == Some(channel_id))
+                                .map(|t| crate::store::ThreadInfo {
+                                    id: t.id,
+                                    name: t.name.clone().unwrap_or_default(),
+                                    parent_channel: channel_id,
+                                    message_count: t.message_count.unwrap_or(0),
+                                })
+                                .collect();
+                            let _ = event_tx.send(DiscordEvent::ForumThreadsLoaded {
+                                channel_id,
+                                threads,
+                            });
+                        }
+                        Err(e) => {
+                            tracing::error!("failed to deserialize active threads: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to load forum threads".to_string(),
+                            });
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!("failed to fetch active threads: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to load forum threads".to_string(),
+                        });
+                    }
+                }
             }
             Action::FetchImage { url, channel_id: _, message_id: _ } => {
                 let client = reqwest::Client::new();

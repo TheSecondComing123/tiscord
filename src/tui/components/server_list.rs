@@ -194,7 +194,10 @@ impl Component for ServerList {
                             .is_some_and(|e| matches!(e, ListEntry::FolderHeader { .. }));
                         let prefix = if in_folder { "  " } else { "" };
 
-                        let mut spans = vec![Span::styled(format!("{}{}", prefix, guild.name), name_style)];
+                        // Build a 2-character abbreviation from the guild name.
+                        let abbrev = guild_abbreviation(&guild.name);
+                        let label = format!("[{}] {}{}", abbrev, prefix, guild.name);
+                        let mut spans = vec![Span::styled(label, name_style)];
 
                         // Show unread count badge next to guild name.
                         let unread_total: u32 = guild.channels.iter()
@@ -231,4 +234,28 @@ impl Component for ServerList {
         let mut state = ListState::default().with_selected(Some(self.selected_index));
         frame.render_stateful_widget(list, area, &mut state);
     }
+}
+
+/// Build a 2-character abbreviation for a guild name (like Discord's icon placeholder).
+/// Takes the first letter of each word, up to 2 letters. Single-word names use the
+/// first 2 characters. Falls back to "??" for empty names.
+fn guild_abbreviation(name: &str) -> String {
+    let mut chars: Vec<char> = name
+        .split_whitespace()
+        .filter_map(|word| word.chars().next())
+        .take(2)
+        .collect();
+    if chars.is_empty() {
+        // Fall back to first two chars of name
+        chars = name.chars().take(2).collect();
+    }
+    if chars.is_empty() {
+        return "??".to_string();
+    }
+    if chars.len() == 1 {
+        // Duplicate the single character
+        let c = chars[0];
+        chars.push(c);
+    }
+    chars.iter().collect::<String>().to_uppercase()
 }
