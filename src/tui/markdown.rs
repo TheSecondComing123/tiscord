@@ -21,6 +21,53 @@ pub fn parse(input: &str) -> Vec<Span<'_>> {
     }
 
     while i < len {
+        // ── blockquote  > text ───────────────────────────────────────────────
+        // Only match at the start of the string or after a newline.
+        let at_line_start = i == 0 || bytes[i - 1] == b'\n';
+        if at_line_start && bytes[i] == b'>' && i + 1 < len && bytes[i + 1] == b' ' {
+            flush_plain!(i);
+            // The blockquote prefix character.
+            spans.push(Span::styled(
+                "│ ",
+                Style::default().fg(theme::TEXT_MUTED),
+            ));
+            // The rest of the line (after "> ") rendered in muted style.
+            let line_end = find_byte(bytes, b'\n', i + 2).unwrap_or(len);
+            let line_content = &input[i + 2..line_end];
+            spans.push(Span::styled(
+                line_content,
+                Style::default().fg(theme::TEXT_MUTED),
+            ));
+            i = line_end;
+            plain_start = i;
+            continue;
+        }
+
+        // ── masked link  [text](url) ─────────────────────────────────────────
+        if bytes[i] == b'[' {
+            // Find the closing bracket.
+            if let Some(close_bracket) = find_byte(bytes, b']', i + 1) {
+                // Check for immediately following '('.
+                let after_bracket = close_bracket + 1;
+                if after_bracket < len && bytes[after_bracket] == b'(' {
+                    if let Some(close_paren) = find_byte(bytes, b')', after_bracket + 1) {
+                        flush_plain!(i);
+                        let link_text = &input[i + 1..close_bracket];
+                        spans.push(Span::styled(
+                            link_text,
+                            Style::default()
+                                .fg(theme::LINK)
+                                .add_modifier(Modifier::UNDERLINED),
+                        ));
+                        i = close_paren + 1;
+                        plain_start = i;
+                        continue;
+                    }
+                }
+            }
+        }
+
+
         // ── code block  ```...``` ────────────────────────────────────────────
         if bytes[i] == b'`' && i + 2 < len && bytes[i + 1] == b'`' && bytes[i + 2] == b'`' {
             // find closing ```
@@ -381,5 +428,35 @@ mod tests {
     fn empty_input() {
         let spans = parse("");
         assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn blockquote() {
+        let spans = parse("> hello");
+        assert_eq!(content(&spans), vec!["│ ", "hello"]);
+        assert_eq!(spans[0].style.fg, Some(theme::TEXT_MUTED));
+        assert_eq!(spans[1].style.fg, Some(theme::TEXT_MUTED));
+    }
+
+    #[test]
+    fn blockquote_mid_text() {
+        // A "> " that is NOT at the start of a line should be treated as plain text.
+        let spans = parse("hello > world");
+        assert_eq!(content(&spans), vec!["hello > world"]);
+    }
+
+    #[test]
+    fn masked_link() {
+        let spans = parse("[click here](https://example.com)");
+        assert_eq!(content(&spans), vec!["click here"]);
+        assert_eq!(spans[0].style.fg, Some(theme::LINK));
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn masked_link_in_sentence() {
+        let spans = parse("see [docs](https://docs.rs) for details");
+        assert_eq!(content(&spans), vec!["see ", "docs", " for details"]);
+        assert_eq!(spans[1].style.fg, Some(theme::LINK));
     }
 }
