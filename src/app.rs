@@ -87,6 +87,10 @@ impl App {
                 if let Some(msg) = store.last_error.take() {
                     self.error_message = Some((msg, Instant::now()));
                 }
+                // Promote informational toasts (e.g. "File sent").
+                if let Some(msg) = store.last_toast.take() {
+                    self.error_message = Some((msg, Instant::now()));
+                }
             }
 
             // Auto-clear error messages older than 5 seconds.

@@ -85,6 +85,10 @@ pub struct Store {
     pub supports_images: bool,
     /// Last API error message to be surfaced as a status-bar toast. Cleared by App after reading.
     pub last_error: Option<String>,
+    /// Last informational toast (non-error). Cleared by App after reading.
+    pub last_toast: Option<String>,
+    /// True while a file upload is in progress (used to show "Uploading..." in status bar).
+    pub uploading_file: bool,
 }
 
 impl Store {
@@ -108,6 +112,8 @@ impl Store {
             image_cache: images::ImageCache::default(),
             supports_images: false,
             last_error: None,
+            last_toast: None,
+            uploading_file: false,
         }
     }
 
@@ -617,6 +623,11 @@ impl Store {
             }
             DiscordEvent::ActionError { message } => {
                 self.last_error = Some(message);
+            }
+            DiscordEvent::FileUploaded { channel_id: _ } => {
+                self.uploading_file = false;
+                self.last_toast = Some("File sent".to_string());
+                tracing::info!("file upload completed");
             }
         }
     }

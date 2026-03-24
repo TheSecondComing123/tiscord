@@ -125,6 +125,10 @@ pub enum DiscordEvent {
     ActionError {
         message: String,
     },
+    /// A file was successfully uploaded to a channel.
+    FileUploaded {
+        channel_id: Id<ChannelMarker>,
+    },
 }
 
 /// Guild data extracted from the user account Ready payload.
