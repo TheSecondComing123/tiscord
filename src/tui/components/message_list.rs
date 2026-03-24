@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use anyhow::Result;
+use chrono::{DateTime, NaiveDate, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
@@ -13,6 +14,24 @@ use crate::tui::component::Component;
 use crate::tui::components::message::render_message_with_thread;
 use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
+
+/// Parse an ISO 8601 timestamp string and return the `NaiveDate` (UTC).
+/// Returns `None` if parsing fails.
+fn message_date(timestamp: &str) -> Option<NaiveDate> {
+    DateTime::parse_from_rfc3339(timestamp)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc).date_naive())
+}
+
+/// Build a centered date separator line, e.g. `── March 22, 2026 ──`.
+fn date_separator_line(date: NaiveDate, width: u16) -> Line<'static> {
+    let label = date.format("%B %-d, %Y").to_string();
+    let inner = format!("── {} ──", label);
+    // Center the inner text within `width` using spaces.
+    let pad = (width as usize).saturating_sub(inner.len()) / 2;
+    let centered = format!("{}{}", " ".repeat(pad), inner);
+    Line::from(Span::styled(centered, theme::muted()))
+}
 
 pub struct MessageList {
     // Wrapped in Cell so they can be mutated in render(&self).
@@ -300,7 +319,21 @@ impl Component for MessageList {
         let mut all_lines: Vec<Line<'static>> = Vec::new();
         let mut line_owners: Vec<usize> = Vec::new();
 
+        let mut prev_date: Option<NaiveDate> = None;
+
         for (msg_idx, msg) in messages.iter().enumerate() {
+            // Insert a date separator when the calendar day changes.
+            let cur_date = message_date(&msg.timestamp);
+            if let Some(date) = cur_date {
+                if prev_date != Some(date) {
+                    let sep = date_separator_line(date, msg_area.width);
+                    all_lines.push(sep);
+                    // Owned by the current message so it highlights together with it.
+                    line_owners.push(msg_idx);
+                }
+                prev_date = Some(date);
+            }
+
             // Look up a thread whose id matches the message id (Discord starter message convention)
             let thread_info = store
                 .ui
