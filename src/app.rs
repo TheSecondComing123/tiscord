@@ -101,16 +101,19 @@ impl App {
                 if let Some(msg) = store.last_toast.take() {
                     self.error_message = Some((msg, Instant::now()));
                 }
-                // Fire desktop notification if a mention was received and the user has
-                // desktop notifications enabled in config.
-                if self.config.notifications.desktop {
-                    if let Some(notif) = store.pending_notification.take() {
+                // Fire desktop notification and/or sound alert on mention.
+                if let Some(notif) = store.pending_notification.take() {
+                    if self.config.notifications.desktop {
                         let summary = format!("@{}", notif.author);
                         let body = notif.content.clone();
                         let _ = notify_rust::Notification::new()
                             .summary(&summary)
                             .body(&body)
                             .show();
+                    }
+                    if self.config.notifications.sound {
+                        // Terminal bell — works in all terminals.
+                        let _ = execute!(io::stdout(), crossterm::style::Print('\x07'));
                     }
                 }
             }
@@ -276,6 +279,8 @@ impl App {
             }
 
             if self.should_quit {
+                // Persist message cache to disk before exiting.
+                self.store.read().unwrap().save_messages();
                 break;
             }
         }

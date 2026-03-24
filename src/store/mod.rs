@@ -1,6 +1,7 @@
 pub mod guilds;
 pub mod images;
 pub mod messages;
+pub mod notes;
 pub mod notifications;
 pub mod profiles;
 pub mod search;
@@ -125,6 +126,10 @@ pub struct Store {
     pub muted_guilds: HashSet<Id<GuildMarker>>,
     /// Friend/blocked/pending relationships for the current user, parsed from the Ready payload.
     pub relationships: Vec<Relationship>,
+    /// Persistent user notes (stored in data_dir/notes.json).
+    pub user_notes: notes::UserNotes,
+    /// Last-loaded audit log entries for display.
+    pub audit_log: Vec<crate::discord::events::AuditLogEntry>,
 }
 
 impl Store {
@@ -132,7 +137,7 @@ impl Store {
         Self {
             guilds: guilds::GuildState::default(),
             guild_folders: Vec::new(),
-            messages: HashMap::new(),
+            messages: messages::load_cache(),
             members: HashMap::new(),
             notifications: notifications::NotificationState::default(),
             ui: state::UiState::default(),
@@ -154,7 +159,14 @@ impl Store {
             muted_channels: HashSet::new(),
             muted_guilds: HashSet::new(),
             relationships: Vec::new(),
+            user_notes: notes::UserNotes::load(),
+            audit_log: Vec::new(),
         }
+    }
+
+    /// Persist the message cache to disk.
+    pub fn save_messages(&self) {
+        messages::save_cache(&self.messages);
     }
 
     pub fn get_or_create_message_buffer(
@@ -790,6 +802,10 @@ impl Store {
                 self.uploading_file = false;
                 self.last_toast = Some("File sent".to_string());
                 tracing::info!("file upload completed");
+            }
+            DiscordEvent::AuditLogLoaded { guild_id, entries } => {
+                self.audit_log = entries;
+                tracing::info!("audit log loaded for guild {guild_id}: {} entries", self.audit_log.len());
             }
         }
     }

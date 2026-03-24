@@ -128,6 +128,31 @@ pub enum Action {
     UnblockUser {
         user_id: Id<UserMarker>,
     },
+    /// Kick a member from a guild.
+    KickMember {
+        guild_id: Id<GuildMarker>,
+        user_id: Id<UserMarker>,
+    },
+    /// Ban a member from a guild.
+    BanMember {
+        guild_id: Id<GuildMarker>,
+        user_id: Id<UserMarker>,
+    },
+    /// Timeout a member (communication disabled until the given ISO 8601 timestamp).
+    TimeoutMember {
+        guild_id: Id<GuildMarker>,
+        user_id: Id<UserMarker>,
+        until: String,
+    },
+    /// Bulk-delete messages in a channel.
+    BulkDeleteMessages {
+        channel_id: Id<ChannelMarker>,
+        message_ids: Vec<Id<MessageMarker>>,
+    },
+    /// Fetch audit log entries for a guild.
+    FetchAuditLog {
+        guild_id: Id<GuildMarker>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -646,6 +671,141 @@ pub async fn run_action_handler(
                 let _ = event_tx.send(DiscordEvent::ActionError {
                     message: format!("Unblock stubbed — user {user_id} unblocked locally"),
                 });
+            }
+            Action::KickMember { guild_id, user_id } => {
+                match http.remove_guild_member(guild_id, user_id).await {
+                    Ok(_) => {
+                        tracing::info!("kicked user {user_id} from guild {guild_id}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Kicked user {user_id}"),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to kick: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Kick failed: {e}"),
+                        });
+                    }
+                }
+            }
+            Action::BanMember { guild_id, user_id } => {
+                match http.create_ban(guild_id, user_id).await {
+                    Ok(_) => {
+                        tracing::info!("banned user {user_id} from guild {guild_id}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Banned user {user_id}"),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to ban: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Ban failed: {e}"),
+                        });
+                    }
+                }
+            }
+            Action::TimeoutMember { guild_id, user_id, until } => {
+                let ts = twilight_model::util::Timestamp::parse(&until);
+                match ts {
+                    Ok(timestamp) => {
+                        match http.update_guild_member(guild_id, user_id)
+                            .communication_disabled_until(Some(timestamp))
+                            .await
+                        {
+                            Ok(_) => {
+                                tracing::info!("timed out user {user_id} until {until}");
+                                let _ = event_tx.send(DiscordEvent::ActionError {
+                                    message: format!("Timed out user {user_id} until {until}"),
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("failed to timeout: {e}");
+                                let _ = event_tx.send(DiscordEvent::ActionError {
+                                    message: format!("Timeout failed: {e}"),
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("invalid timeout timestamp: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Invalid timestamp: {e}"),
+                        });
+                    }
+                }
+            }
+            Action::BulkDeleteMessages { channel_id, message_ids } => {
+                if message_ids.len() == 1 {
+                    match http.delete_message(channel_id, message_ids[0]).await {
+                        Ok(_) => {
+                            tracing::info!("deleted 1 message in {channel_id}");
+                        }
+                        Err(e) => {
+                            tracing::error!("failed to delete message: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: format!("Delete failed: {e}"),
+                            });
+                        }
+                    }
+                } else if message_ids.len() >= 2 {
+                    match http.delete_messages(channel_id, &message_ids).await {
+                        Ok(_) => {
+                            tracing::info!("bulk-deleted {} messages in {channel_id}", message_ids.len());
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: format!("Deleted {} messages", message_ids.len()),
+                            });
+                        }
+                        Err(e) => {
+                            tracing::error!("failed to bulk-delete: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: format!("Bulk delete failed: {e}"),
+                            });
+                        }
+                    }
+                }
+            }
+            Action::FetchAuditLog { guild_id } => {
+                match http.audit_log(guild_id).limit(25).await {
+                    Ok(response) => {
+                        match response.model().await {
+                            Ok(audit_log) => {
+                                let entries: Vec<crate::discord::events::AuditLogEntry> = audit_log
+                                    .entries
+                                    .iter()
+                                    .map(|entry| {
+                                        let user_name = entry.user_id
+                                            .and_then(|uid| {
+                                                audit_log.users.iter().find(|u| u.id == uid).map(|u| u.name.clone())
+                                            })
+                                            .unwrap_or_else(|| "Unknown".to_string());
+                                        let target = entry.target_id
+                                            .map(|tid| tid.to_string())
+                                            .unwrap_or_else(|| "-".to_string());
+                                        crate::discord::events::AuditLogEntry {
+                                            action_type: format!("{:?}", entry.action_type),
+                                            user_name,
+                                            target,
+                                            reason: entry.reason.clone(),
+                                        }
+                                    })
+                                    .collect();
+                                let _ = event_tx.send(DiscordEvent::AuditLogLoaded { guild_id, entries });
+                            }
+                            Err(e) => {
+                                tracing::error!("failed to deserialize audit log: {e}");
+                                let _ = event_tx.send(DiscordEvent::ActionError {
+                                    message: format!("Audit log failed: {e}"),
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to fetch audit log: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Audit log failed: {e}"),
+                        });
+                    }
+                }
             }
             Action::FetchImage { url, channel_id: _, message_id: _ } => {
                 let client = reqwest::Client::new();

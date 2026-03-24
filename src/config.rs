@@ -74,6 +74,8 @@ impl Default for UiConfig {
 pub struct NotificationConfig {
     pub desktop: bool,
     pub mentions_only: bool,
+    /// Play a terminal bell sound on mention.
+    pub sound: bool,
 }
 
 impl Default for NotificationConfig {
@@ -81,6 +83,7 @@ impl Default for NotificationConfig {
         NotificationConfig {
             desktop: false,
             mentions_only: false,
+            sound: false,
         }
     }
 }

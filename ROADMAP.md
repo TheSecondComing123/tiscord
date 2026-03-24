@@ -40,6 +40,7 @@
 ### Notification System
 
 - [x] Desktop notifications via `notify-rust`
+- [x] Sound alerts on mention (terminal bell)
 - [x] Channel/server mute controls
 - [x] Window title badge with unread count
 
@@ -58,6 +59,7 @@
 - [x] Message components (buttons rendered as text labels)
 - [x] Embed images/thumbnails (with Kitty)
 - [x] Embed color bar (use embed color field)
+- [x] Full edit timestamp on hover
 
 ### User Account
 
@@ -65,36 +67,27 @@
 - [x] Set online/idle/dnd/invisible status
 - [x] Friend list / pending requests
 - [x] Block/unblock users
-
-### Caching and Cleanup
-
-- [x] Background cleanup of expired typing indicators
-- [x] Bounded profile cache (cap at N entries)
-
-## In Progress
-
-### Remaining Features
-
-- [ ] Sound alerts on mention
-- [x] Full edit timestamp on hover
-- [ ] User notes
+- [x] User notes (persistent local storage)
 
 ### Moderation (for server admins)
 
-- [ ] Kick/ban members
-- [ ] Timeout members
-- [ ] Delete messages in bulk
-- [ ] View audit log
+- [x] Kick/ban members
+- [x] Timeout members
+- [x] Delete messages in bulk
+- [x] View audit log
 
-### Advanced Performance
+### Performance
 
-- [ ] Lazy message loading (only fetch visible range)
-- [ ] Persistent message cache across restarts
+- [x] Background cleanup of expired typing indicators
+- [x] Bounded profile cache (cap at N entries)
+- [x] Lazy message loading (only fetch visible range)
+- [x] Persistent message cache across restarts
 
-### Sixel Image Protocol
+### Image Protocols
 
-- [ ] Sixel encoding for iTerm2/mintty terminals
-- [ ] Image thumbnail sizing based on terminal cell dimensions
+- [x] Kitty graphics protocol
+- [x] Sixel encoding for iTerm2/mintty terminals
+- [x] Image thumbnail sizing based on terminal cell dimensions
 
 ## Won't Implement
 

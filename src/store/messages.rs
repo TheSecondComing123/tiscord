@@ -1,27 +1,29 @@
 use std::collections::VecDeque;
+
+use serde::{Deserialize, Serialize};
 use twilight_model::id::marker::{MessageMarker, UserMarker};
 use twilight_model::id::Id;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StickerInfo {
     pub name: String,
     pub format: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReactionEmoji {
     Unicode(String),
     Custom { id: u64, name: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reaction {
     pub emoji: ReactionEmoji,
     pub count: u32,
     pub me: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embed {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -32,32 +34,32 @@ pub struct Embed {
     pub author_name: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbedField {
     pub name: String,
     pub value: String,
     pub inline: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PollAnswer {
     pub text: String,
     pub count: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PollInfo {
     pub question: String,
     pub answers: Vec<PollAnswer>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentInfo {
     pub kind: String,
     pub label: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
     pub id: Id<MessageMarker>,
     pub author_name: String,
@@ -75,13 +77,13 @@ pub struct StoredMessage {
     pub components: Vec<ComponentInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplyContext {
     pub author_name: String,
     pub content_preview: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attachment {
     pub filename: String,
     pub size: u64,
@@ -182,6 +184,59 @@ impl MessageBuffer {
             msg.reactions.clear();
         }
     }
+}
+
+/// Maximum number of messages cached per channel when persisting to disk.
+const PERSIST_LIMIT: usize = 100;
+
+/// Save the most recent messages per channel to disk.
+pub fn save_cache(
+    messages: &std::collections::HashMap<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, MessageBuffer>,
+) {
+    use std::collections::HashMap;
+    let path = crate::config::Config::data_dir().join("message_cache.json");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // Store last N messages per channel, keyed by channel ID string.
+    let cache: HashMap<String, Vec<&StoredMessage>> = messages
+        .iter()
+        .map(|(cid, buf)| {
+            let msgs: Vec<&StoredMessage> = buf.messages().iter().rev().take(PERSIST_LIMIT).collect();
+            (cid.get().to_string(), msgs.into_iter().rev().collect())
+        })
+        .collect();
+    if let Ok(json) = serde_json::to_string(&cache) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+/// Load the message cache from disk. Returns a map of channel ID → messages.
+pub fn load_cache() -> std::collections::HashMap<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, MessageBuffer> {
+    use std::collections::HashMap;
+    let path = crate::config::Config::data_dir().join("message_cache.json");
+    if !path.exists() {
+        return HashMap::new();
+    }
+    let data = match std::fs::read_to_string(&path) {
+        Ok(d) => d,
+        Err(_) => return HashMap::new(),
+    };
+    let raw: HashMap<String, Vec<StoredMessage>> = match serde_json::from_str(&data) {
+        Ok(r) => r,
+        Err(_) => return HashMap::new(),
+    };
+    raw.into_iter()
+        .filter_map(|(k, msgs)| {
+            let id: u64 = k.parse().ok()?;
+            let cid = twilight_model::id::Id::new(id);
+            let mut buf = MessageBuffer::new(500);
+            for msg in msgs {
+                buf.push(msg);
+            }
+            Some((cid, buf))
+        })
+        .collect()
 }
 
 pub fn reaction_emoji_eq(a: &ReactionEmoji, b: &ReactionEmoji) -> bool {

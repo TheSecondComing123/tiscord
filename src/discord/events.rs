@@ -137,6 +137,20 @@ pub enum DiscordEvent {
     FileUploaded {
         channel_id: Id<ChannelMarker>,
     },
+    /// Audit log entries loaded for display.
+    AuditLogLoaded {
+        guild_id: Id<GuildMarker>,
+        entries: Vec<AuditLogEntry>,
+    },
+}
+
+/// Simplified audit log entry for display.
+#[derive(Debug, Clone)]
+pub struct AuditLogEntry {
+    pub action_type: String,
+    pub user_name: String,
+    pub target: String,
+    pub reason: Option<String>,
 }
 
 /// Guild data extracted from the user account Ready payload.
