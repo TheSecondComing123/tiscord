@@ -1,4 +1,4 @@
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::store::messages::{ReactionEmoji, StoredMessage};
@@ -90,41 +90,51 @@ pub fn render_message_full(msg: &StoredMessage, _width: u16, thread: Option<&Thr
         let bar = "│ ";
         let embed_style = Style::default().fg(theme::TEXT_MUTED);
 
+        // Convert embed color (u32 RGB) to a ratatui Color, falling back to muted.
+        let bar_style = if let Some(color) = embed.color {
+            let r = ((color >> 16) & 0xFF) as u8;
+            let g = ((color >> 8) & 0xFF) as u8;
+            let b = (color & 0xFF) as u8;
+            Style::default().fg(Color::Rgb(r, g, b))
+        } else {
+            Style::default().fg(theme::TEXT_MUTED)
+        };
+
         if let Some(author) = &embed.author_name {
-            lines.push(Line::from(Span::styled(
-                format!("{}{}", bar, author),
-                embed_style.add_modifier(Modifier::DIM),
-            )));
+            lines.push(Line::from(vec![
+                Span::styled(bar.to_string(), bar_style),
+                Span::styled(author.clone(), embed_style.add_modifier(Modifier::DIM)),
+            ]));
         }
         if let Some(title) = &embed.title {
             let title_style = Style::default()
                 .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD);
-            lines.push(Line::from(Span::styled(
-                format!("{}{}", bar, title),
-                title_style,
-            )));
+            lines.push(Line::from(vec![
+                Span::styled(bar.to_string(), bar_style),
+                Span::styled(title.clone(), title_style),
+            ]));
         }
         if let Some(desc) = &embed.description {
             for line in desc.lines() {
-                lines.push(Line::from(Span::styled(
-                    format!("{}{}", bar, line),
-                    embed_style,
-                )));
+                lines.push(Line::from(vec![
+                    Span::styled(bar.to_string(), bar_style),
+                    Span::styled(line.to_string(), embed_style),
+                ]));
             }
         }
         for field in &embed.fields {
             lines.push(Line::from(vec![
-                Span::styled(bar.to_string(), embed_style),
+                Span::styled(bar.to_string(), bar_style),
                 Span::styled(field.name.clone(), embed_style.add_modifier(Modifier::BOLD)),
                 Span::styled(format!(": {}", field.value), embed_style),
             ]));
         }
         if let Some(footer) = &embed.footer {
-            lines.push(Line::from(Span::styled(
-                format!("{}{}", bar, footer),
-                embed_style.add_modifier(Modifier::DIM),
-            )));
+            lines.push(Line::from(vec![
+                Span::styled(bar.to_string(), bar_style),
+                Span::styled(footer.clone(), embed_style.add_modifier(Modifier::DIM)),
+            ]));
         }
     }
 
