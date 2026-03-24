@@ -476,6 +476,18 @@ impl App {
             }
         }
 
+        // Auto-fetch members when a guild is selected and we don't have them
+        {
+            let mut store = self.store.write().unwrap();
+            if let Some(guild_id) = store.ui.selected_guild {
+                if !store.members.contains_key(&guild_id) {
+                    // Insert empty vec to prevent duplicate fetches
+                    store.members.insert(guild_id, Vec::new());
+                    let _ = self.action_tx.send(Action::FetchGuildMembers { guild_id });
+                }
+            }
+        }
+
         Ok(())
     }
 
