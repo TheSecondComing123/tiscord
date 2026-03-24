@@ -167,6 +167,7 @@ impl Store {
                             category_id: ch.parent_id,
                             position: ch.position,
                             topic: None, // ReadyChannel doesn't carry topic
+                            nsfw: false, // ReadyChannel doesn't carry nsfw
                         })
                         .collect();
                     tracing::debug!("guild {} has {} channels, {} members from Ready", rg.name, channels.len(), rg.members.len());
@@ -219,6 +220,7 @@ impl Store {
                         category_id: ch.parent_id,
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
+                        nsfw: ch.nsfw.unwrap_or(false),
                     })
                     .collect();
 
@@ -251,6 +253,7 @@ impl Store {
                         category_id: ch.parent_id,
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
+                        nsfw: ch.nsfw.unwrap_or(false),
                     };
                     self.guilds.add_channel_to_guild(guild_id, info);
                     tracing::debug!("channel create: {}", ch.id);
@@ -279,6 +282,7 @@ impl Store {
                         category_id: ch.parent_id,
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
+                        nsfw: ch.nsfw.unwrap_or(false),
                     };
                     self.guilds.update_channel_in_guild(guild_id, info);
                     tracing::debug!("channel update: {}", ch.id);
@@ -401,6 +405,7 @@ impl Store {
                         category_id: ch.parent_id,
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
+                        nsfw: ch.nsfw.unwrap_or(false),
                     })
                     .collect();
                 // Update the guild's channels
@@ -702,6 +707,7 @@ mod tests {
             category_id: None,
             position: 1,
             topic: None,
+            nsfw: false,
         };
         store.guilds.add_channel_to_guild(Id::new(1), ch);
 

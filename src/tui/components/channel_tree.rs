@@ -160,7 +160,11 @@ impl Component for ChannelTree {
                     let has_unread = store.notifications.has_unreads(ch.id);
                     let has_mention = store.notifications.has_mentions(ch.id);
 
-                    let name = format!("# {}", ch.name);
+                    let name = if ch.nsfw {
+                        format!("🔞 {}", ch.name)
+                    } else {
+                        format!("# {}", ch.name)
+                    };
                     let has_typers = store.typing.has_typers(ch.id);
 
                     let base_style = if is_selected {

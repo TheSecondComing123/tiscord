@@ -19,6 +19,8 @@ pub struct ChannelInfo {
     pub position: i32,
     /// Channel topic/description (text channels only).
     pub topic: Option<String>,
+    /// Whether the channel is marked as NSFW.
+    pub nsfw: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +164,7 @@ mod tests {
             category_id: category_id.map(ch_id),
             position,
             topic: None,
+            nsfw: false,
         }
     }
 
