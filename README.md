@@ -7,7 +7,7 @@ A Discord client for your terminal. Browse servers, channels, and DMs, read and 
 Requires Rust 1.85+
 
 ```bash
-git clone https://github.com/alanbagel/tiscord.git
+git clone https://github.com/TheSecondComing123/tiscord.git
 cd tiscord
 cargo build --release
 ```
