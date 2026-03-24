@@ -1,6 +1,45 @@
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker};
 use twilight_model::id::Id;
 
+/// The current user's own online status, cycled with Ctrl+S.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnStatus {
+    Online,
+    Idle,
+    Dnd,
+    Invisible,
+}
+
+impl OwnStatus {
+    /// Cycle to the next status in the sequence: Online → Idle → DND → Invisible → Online.
+    pub fn cycle(self) -> Self {
+        match self {
+            OwnStatus::Online => OwnStatus::Idle,
+            OwnStatus::Idle => OwnStatus::Dnd,
+            OwnStatus::Dnd => OwnStatus::Invisible,
+            OwnStatus::Invisible => OwnStatus::Online,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OwnStatus::Online => "online",
+            OwnStatus::Idle => "idle",
+            OwnStatus::Dnd => "dnd",
+            OwnStatus::Invisible => "invisible",
+        }
+    }
+
+    pub fn display(self) -> &'static str {
+        match self {
+            OwnStatus::Online => "Online",
+            OwnStatus::Idle => "Idle",
+            OwnStatus::Dnd => "DND",
+            OwnStatus::Invisible => "Invisible",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum PaneView {
     Channel(Id<ChannelMarker>),
@@ -43,6 +82,8 @@ pub struct UiState {
     pub reply_to: Option<ReplyTarget>,
     pub editing_message: Option<Id<MessageMarker>>,
     pub message_pane_stack: Vec<PaneView>,
+    /// The current user's own presence status (cycled with Ctrl+S).
+    pub own_status: OwnStatus,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +107,7 @@ impl Default for UiState {
             reply_to: None,
             editing_message: None,
             message_pane_stack: Vec::new(),
+            own_status: OwnStatus::Online,
         }
     }
 }

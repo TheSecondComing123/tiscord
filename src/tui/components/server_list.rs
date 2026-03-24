@@ -196,6 +196,11 @@ impl Component for ServerList {
 
                         let mut spans = vec![Span::styled(format!("{}{}", prefix, guild.name), name_style)];
 
+                        // Show unread count badge next to guild name.
+                        let unread_total: u32 = guild.channels.iter()
+                            .filter_map(|ch| store.notifications.get(ch.id))
+                            .map(|n| n.unread_count)
+                            .sum();
                         if has_mention {
                             let mention_count: u32 = guild.channels.iter()
                                 .filter_map(|ch| store.notifications.get(ch.id))
@@ -205,6 +210,12 @@ impl Component for ServerList {
                             spans.push(Span::styled(
                                 format!("({})", mention_count),
                                 Style::default().fg(theme::MENTION).add_modifier(Modifier::BOLD),
+                            ));
+                        } else if unread_total > 0 {
+                            spans.push(Span::raw(" "));
+                            spans.push(Span::styled(
+                                format!("({})", unread_total),
+                                Style::default().fg(theme::TEXT_SECONDARY).add_modifier(Modifier::BOLD),
                             ));
                         }
 

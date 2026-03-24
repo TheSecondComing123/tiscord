@@ -11,7 +11,7 @@ use crate::config::Config;
 use crate::discord::actions::Action;
 use crate::discord::events::DiscordEvent;
 use crate::store::search::SearchScope;
-use crate::store::state::{ConnectionStatus, FocusTarget, PaneView, ReplyTarget};
+use crate::store::state::{ConnectionStatus, FocusTarget, OwnStatus, PaneView, ReplyTarget};
 use crate::store::Store;
 use crate::tui::component::Component;
 use crate::tui::components::member_sidebar::MemberSidebar;
@@ -332,6 +332,18 @@ impl App {
                     }
                     return Ok(());
                 }
+                KeyCode::Char('s') => {
+                    // Ctrl+S: cycle own presence status Online → Idle → DND → Invisible → Online
+                    let new_status = {
+                        let mut store = self.store.write().unwrap();
+                        store.ui.own_status = store.ui.own_status.cycle();
+                        store.ui.own_status
+                    };
+                    let _ = self.action_tx.send(Action::SetStatus {
+                        status: new_status.as_str().to_string(),
+                    });
+                    return Ok(());
+                }
                 _ => {}
             }
         }
@@ -553,17 +565,24 @@ fn render_status_bar(
 
     let status_bg = Style::default().bg(theme::BG_SECONDARY);
 
-    // Left section: connection status
+    // Left section: connection status + own presence status
     let (conn_text, conn_color) = match store.ui.connection_status {
         ConnectionStatus::Connected => ("Connected", theme::ONLINE),
         ConnectionStatus::Reconnecting => ("Reconnecting...", theme::IDLE),
         ConnectionStatus::Connecting => ("Connecting...", theme::IDLE),
         ConnectionStatus::Disconnected => ("Disconnected", theme::DND),
     };
-    let left_span = Span::styled(
-        format!(" {conn_text} "),
-        status_bg.fg(conn_color),
-    );
+    let (own_status_text, own_status_color) = match store.ui.own_status {
+        OwnStatus::Online => ("● Online", theme::ONLINE),
+        OwnStatus::Idle => ("◐ Idle", theme::IDLE),
+        OwnStatus::Dnd => ("⊖ DND", theme::DND),
+        OwnStatus::Invisible => ("○ Invisible", theme::TEXT_MUTED),
+    };
+    let left_line = Line::from(vec![
+        Span::styled(format!(" {conn_text} "), status_bg.fg(conn_color)),
+        Span::styled(own_status_text, status_bg.fg(own_status_color)),
+        Span::raw(" "),
+    ]);
 
     // Center section: error message (if active) or typing indicator or guild > channel
     let center_span = if let Some((msg, _)) = error_message {
@@ -659,7 +678,7 @@ fn render_status_bar(
     frame.render_widget(Paragraph::new("").style(status_bg), area);
 
     frame.render_widget(
-        Paragraph::new(Line::from(left_span)).style(status_bg),
+        Paragraph::new(left_line).style(status_bg),
         cols[0],
     );
     frame.render_widget(
