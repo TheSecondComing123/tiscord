@@ -39,36 +39,21 @@ impl Component for MemberSidebar {
             .unwrap_or(0);
 
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Down => {
                 self.scroll_offset = self.scroll_offset.saturating_add(1);
                 if member_count > 0 {
                     self.selected_index = (self.selected_index + 1).min(member_count - 1);
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Up => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
                 self.selected_index = self.selected_index.saturating_sub(1);
             }
             KeyCode::Esc | KeyCode::Left => {
-                // Back to message list
                 store.ui.focus = FocusTarget::MessageList;
             }
             KeyCode::Enter | KeyCode::Right => {
-                // Go to message input
                 store.ui.focus = FocusTarget::MessageInput;
-            }
-            KeyCode::Char('p') => {
-                // Open profile overlay for the selected member
-                if let Some(guild_id) = store.ui.selected_guild {
-                    if let Some(members) = store.members.get(&guild_id) {
-                        if let Some(member) = members.get(self.selected_index) {
-                            let user_id = member.id;
-                            return Ok(Some(Action::ComponentKeyAction(
-                                KeyAction::OpenProfileOverlay { user_id },
-                            )));
-                        }
-                    }
-                }
             }
             _ => {}
         }

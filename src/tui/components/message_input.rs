@@ -86,23 +86,10 @@ impl Component for MessageInput {
             return Ok(None);
         }
 
-        // Scroll messages while typing — switch focus to message list
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('u') | KeyCode::Char('d') => {
-                    // Switch to message list so the scroll keys work there
-                    store.ui.focus = FocusTarget::MessageList;
-                    return Ok(None);
-                }
-                _ => {}
-            }
-        }
-        match key.code {
-            KeyCode::PageUp | KeyCode::PageDown => {
-                store.ui.focus = FocusTarget::MessageList;
-                return Ok(None);
-            }
-            _ => {}
+        // PageUp/PageDown switch to message list for scrolling
+        if matches!(key.code, KeyCode::PageUp | KeyCode::PageDown) {
+            store.ui.focus = FocusTarget::MessageList;
+            return Ok(None);
         }
 
         match key.code {

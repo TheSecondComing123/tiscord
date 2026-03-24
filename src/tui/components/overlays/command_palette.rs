@@ -216,21 +216,6 @@ impl Component for CommandPalette {
             return Ok(None);
         }
 
-        // Ctrl+j / Ctrl+k for navigation inside the palette.
-        if key.modifiers == KeyModifiers::CONTROL {
-            match key.code {
-                KeyCode::Char('j') => {
-                    self.move_down();
-                    return Ok(None);
-                }
-                KeyCode::Char('k') => {
-                    self.move_up();
-                    return Ok(None);
-                }
-                _ => {}
-            }
-        }
-
         match key.code {
             KeyCode::Esc => {
                 self.close();
