@@ -41,7 +41,7 @@ impl Component for ChannelTree {
         let total = selectable.len();
 
         let changed = match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Down => {
                 if total > 0 && self.selected_index + 1 < total {
                     self.selected_index += 1;
                     true
@@ -49,7 +49,7 @@ impl Component for ChannelTree {
                     false
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Up => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     true
@@ -58,12 +58,10 @@ impl Component for ChannelTree {
                 }
             }
             KeyCode::Enter | KeyCode::Right => {
-                // Enter/Right moves focus to message input, ready to type
                 store.ui.focus = FocusTarget::MessageInput;
                 return Ok(None);
             }
             KeyCode::Esc | KeyCode::Left => {
-                // Back to server list
                 store.ui.focus = FocusTarget::ServerList;
                 return Ok(None);
             }

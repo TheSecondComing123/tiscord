@@ -305,10 +305,9 @@ impl App {
             }
         }
 
-        // Open search overlay with `/` when MessageList is focused.
-        if focus == FocusTarget::MessageList
-            && key.code == KeyCode::Char('/')
-            && key.modifiers == KeyModifiers::NONE
+        // Open search overlay with Ctrl+F.
+        if key.code == KeyCode::Char('f')
+            && key.modifiers == KeyModifiers::CONTROL
         {
             let mut store = self.store.write().unwrap();
             let scope = store

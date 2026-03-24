@@ -73,10 +73,10 @@ impl Component for PinsOverlay {
             KeyCode::Esc => {
                 self.close();
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 self.move_up(pin_count);
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 self.move_down(pin_count);
             }
             _ => {}

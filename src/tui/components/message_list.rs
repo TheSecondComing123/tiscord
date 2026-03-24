@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -15,8 +14,6 @@ use crate::tui::components::message::render_message_with_thread;
 use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
 
-const CHORD_TIMEOUT: Duration = Duration::from_millis(500);
-
 pub struct MessageList {
     // Wrapped in Cell so they can be mutated in render(&self).
     selected_index: Cell<Option<usize>>,
@@ -24,7 +21,6 @@ pub struct MessageList {
     is_fetching_history: Cell<bool>,
     last_message_count: Cell<usize>,
     last_channel_id: Cell<Option<u64>>,
-    pending_chord: Option<(KeyCode, Instant)>,
 }
 
 impl MessageList {
@@ -35,7 +31,6 @@ impl MessageList {
             is_fetching_history: Cell::new(false),
             last_message_count: Cell::new(0),
             last_channel_id: Cell::new(None),
-            pending_chord: None,
         }
     }
 
@@ -76,31 +71,9 @@ impl Component for MessageList {
         let selected = self.selected_index.get();
         let is_fetching = self.is_fetching_history.get();
 
-        // Handle pending chord
-        if let Some((chord_key, chord_time)) = self.pending_chord.take() {
-            if chord_time.elapsed() < CHORD_TIMEOUT
-                && chord_key == KeyCode::Char('g')
-                && key.code == KeyCode::Char('g')
-            {
-                self.selected_index.set(Some(0));
-                self.auto_scroll.set(false);
-                if !is_fetching {
-                    let oldest_id = buffer.messages().front().map(|m| m.id);
-                    self.is_fetching_history.set(true);
-                    return Ok(Some(Action::FetchMessages {
-                        channel_id,
-                        before: oldest_id,
-                        limit: 50,
-                    }));
-                }
-                return Ok(None);
-            }
-            // Expired or unmatched chord - fall through and process key normally
-        }
-
         match (key.code, key.modifiers) {
             // Navigation
-            (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => {
+            (KeyCode::Down, KeyModifiers::NONE) => {
                 if message_count == 0 {
                     return Ok(None);
                 }
@@ -108,7 +81,7 @@ impl Component for MessageList {
                 let current = selected.unwrap_or(last_index);
                 self.selected_index.set(Some(current.saturating_add(1).min(last_index)));
             }
-            (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => {
+            (KeyCode::Up, KeyModifiers::NONE) => {
                 if message_count == 0 {
                     return Ok(None);
                 }
@@ -126,33 +99,6 @@ impl Component for MessageList {
                         limit: 50,
                     }));
                 }
-            }
-            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                if message_count == 0 {
-                    return Ok(None);
-                }
-                self.auto_scroll.set(false);
-                let current = selected.unwrap_or(last_index);
-                let new_idx = current.saturating_sub(10);
-                self.selected_index.set(Some(new_idx));
-
-                if new_idx == 0 && !is_fetching {
-                    let oldest_id = buffer.messages().front().map(|m| m.id);
-                    self.is_fetching_history.set(true);
-                    return Ok(Some(Action::FetchMessages {
-                        channel_id,
-                        before: oldest_id,
-                        limit: 50,
-                    }));
-                }
-            }
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) | (KeyCode::PageDown, _) => {
-                if message_count == 0 {
-                    return Ok(None);
-                }
-                self.auto_scroll.set(false);
-                let current = selected.unwrap_or(last_index);
-                self.selected_index.set(Some(current.saturating_add(10).min(last_index)));
             }
             (KeyCode::PageUp, _) => {
                 if message_count == 0 {
@@ -173,31 +119,57 @@ impl Component for MessageList {
                     }));
                 }
             }
-            // KeyCode::Char('G') arrives with SHIFT on some terminals; handle both.
-            (KeyCode::Char('G'), _) => {
+            (KeyCode::PageDown, _) => {
+                if message_count == 0 {
+                    return Ok(None);
+                }
+                self.auto_scroll.set(false);
+                let current = selected.unwrap_or(last_index);
+                self.selected_index.set(Some(current.saturating_add(10).min(last_index)));
+            }
+            (KeyCode::Home, _) => {
+                if message_count > 0 {
+                    self.selected_index.set(Some(0));
+                    self.auto_scroll.set(false);
+                    if !is_fetching {
+                        let oldest_id = buffer.messages().front().map(|m| m.id);
+                        self.is_fetching_history.set(true);
+                        return Ok(Some(Action::FetchMessages {
+                            channel_id,
+                            before: oldest_id,
+                            limit: 50,
+                        }));
+                    }
+                }
+            }
+            (KeyCode::End, _) => {
                 if message_count > 0 {
                     self.selected_index.set(Some(last_index));
                     self.auto_scroll.set(true);
                 }
             }
-            // Start gg chord
-            (KeyCode::Char('g'), KeyModifiers::NONE) => {
-                self.pending_chord = Some((KeyCode::Char('g'), Instant::now()));
-            }
 
             // Focus transitions
-            (KeyCode::Enter | KeyCode::Char('i'), KeyModifiers::NONE) => {
-                // Go to message input
+            (KeyCode::Enter, KeyModifiers::NONE) => {
                 store.ui.focus = FocusTarget::MessageInput;
             }
             (KeyCode::Esc | KeyCode::Left, KeyModifiers::NONE) => {
-                // If we're in a nested pane (e.g. thread), pop back; otherwise go to channel tree.
                 if !store.ui.pop_pane() {
                     store.ui.focus = FocusTarget::ChannelTree;
                 }
             }
-            // t - open thread for the selected message (if the message has a thread)
-            (KeyCode::Char('t'), KeyModifiers::NONE) => {
+
+            // Message actions — use Ctrl+key for discoverability
+            (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::Reply)));
+            }
+            (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::EditMessage)));
+            }
+            (KeyCode::Delete | KeyCode::Backspace, _) => {
+                return Ok(Some(Action::ComponentKeyAction(KeyAction::DeleteMessage)));
+            }
+            (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
                 if let Some(msg) = self.get_selected_message(store) {
                     let msg_id = msg.id;
                     // Look for a thread whose first message is this one (Discord threads are
@@ -223,50 +195,6 @@ impl Component for MessageList {
                                 before: None,
                                 limit: 50,
                             }));
-                        }
-                    }
-                }
-            }
-
-            // Message actions (return ComponentKeyAction for App to handle)
-            (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                return Ok(Some(Action::ComponentKeyAction(KeyAction::Reply)));
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                return Ok(Some(Action::ComponentKeyAction(KeyAction::EditMessage)));
-            }
-            (KeyCode::Char('d'), KeyModifiers::NONE) => {
-                return Ok(Some(Action::ComponentKeyAction(KeyAction::DeleteMessage)));
-            }
-            (KeyCode::Char('+'), KeyModifiers::NONE) => {
-                return Ok(Some(Action::ComponentKeyAction(KeyAction::OpenEmojiPicker)));
-            }
-            // p (lowercase) - open profile overlay for the message author
-            (KeyCode::Char('p'), KeyModifiers::NONE) => {
-                if let Some(msg) = self.get_selected_message(store) {
-                    let author_id = msg.author_id;
-                    return Ok(Some(Action::ComponentKeyAction(
-                        KeyAction::OpenProfileOverlay { user_id: author_id },
-                    )));
-                }
-            }
-            // P (uppercase) - pin or unpin the selected message
-            (KeyCode::Char('P'), _) => {
-                if let Some(msg) = self.get_selected_message(store) {
-                    let message_id = msg.id;
-                    if let Some(channel_id) = store.ui.active_channel() {
-                        // Check if already pinned
-                        let is_pinned = store
-                            .pinned_messages
-                            .get(&channel_id)
-                            .and_then(|opt| opt.as_ref())
-                            .map(|pins| pins.iter().any(|p| p.id == message_id))
-                            .unwrap_or(false);
-
-                        if is_pinned {
-                            return Ok(Some(Action::UnpinMessage { channel_id, message_id }));
-                        } else {
-                            return Ok(Some(Action::PinMessage { channel_id, message_id }));
                         }
                     }
                 }

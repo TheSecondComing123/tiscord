@@ -29,12 +29,12 @@ impl Component for DMList {
         let total = store.dm_channels.len();
 
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Down => {
                 if total > 0 && self.selected_index + 1 < total {
                     self.selected_index += 1;
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Up => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                 }

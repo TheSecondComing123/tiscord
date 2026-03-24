@@ -127,12 +127,12 @@ impl Component for ServerList {
         let entries = Self::build_entries(store);
 
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Down => {
                 self.move_selection(&entries, 1);
                 let action = self.apply_selection(&entries, store);
                 return Ok(action);
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Up => {
                 self.move_selection(&entries, -1);
                 let action = self.apply_selection(&entries, store);
                 return Ok(action);
