@@ -308,8 +308,7 @@ impl Component for MessageList {
                 .and_then(|cid| store.active_threads.get(&cid))
                 .and_then(|threads| threads.iter().find(|t| t.id.get() == msg.id.get()));
 
-            // TODO: pass terminal_caps.supports_images() once threaded through render context
-            let rendered = render_message_with_thread(msg, msg_area.width, thread_info, false);
+            let rendered = render_message_with_thread(msg, msg_area.width, thread_info, store.supports_images);
             let line_count = rendered.len();
             all_lines.extend(rendered);
             for _ in 0..line_count {

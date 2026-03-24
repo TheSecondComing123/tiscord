@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use tokio::sync::mpsc;
 
 use crate::config::Config;
