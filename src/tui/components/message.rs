@@ -73,6 +73,49 @@ pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Opti
         lines.push(Line::from(Span::styled(text, theme::secondary_text())));
     }
 
+    // ── embeds ────────────────────────────────────────────────────────────────
+    for embed in &msg.embeds {
+        let bar = "│ ";
+        let embed_style = Style::default().fg(theme::TEXT_MUTED);
+
+        if let Some(author) = &embed.author_name {
+            lines.push(Line::from(Span::styled(
+                format!("{}{}", bar, author),
+                embed_style.add_modifier(Modifier::DIM),
+            )));
+        }
+        if let Some(title) = &embed.title {
+            let title_style = Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD);
+            lines.push(Line::from(Span::styled(
+                format!("{}{}", bar, title),
+                title_style,
+            )));
+        }
+        if let Some(desc) = &embed.description {
+            for line in desc.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("{}{}", bar, line),
+                    embed_style,
+                )));
+            }
+        }
+        for field in &embed.fields {
+            lines.push(Line::from(vec![
+                Span::styled(bar.to_string(), embed_style),
+                Span::styled(field.name.clone(), embed_style.add_modifier(Modifier::BOLD)),
+                Span::styled(format!(": {}", field.value), embed_style),
+            ]));
+        }
+        if let Some(footer) = &embed.footer {
+            lines.push(Line::from(Span::styled(
+                format!("{}{}", bar, footer),
+                embed_style.add_modifier(Modifier::DIM),
+            )));
+        }
+    }
+
     // ── thread indicator ─────────────────────────────────────────────────────
     if let Some(t) = thread {
         let text = format!("\u{1f9f5} {} ({} replies)", t.name, t.message_count);

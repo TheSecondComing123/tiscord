@@ -16,6 +16,24 @@ pub struct Reaction {
 }
 
 #[derive(Debug, Clone)]
+pub struct Embed {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub url: Option<String>,
+    pub color: Option<u32>,
+    pub fields: Vec<EmbedField>,
+    pub footer: Option<String>,
+    pub author_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedField {
+    pub name: String,
+    pub value: String,
+    pub inline: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct StoredMessage {
     pub id: Id<MessageMarker>,
     pub author_name: String,
@@ -26,6 +44,7 @@ pub struct StoredMessage {
     pub attachments: Vec<Attachment>,
     pub is_edited: bool,
     pub reactions: Vec<Reaction>,
+    pub embeds: Vec<Embed>,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +176,7 @@ mod tests {
             attachments: vec![],
             is_edited: false,
             reactions: vec![],
+            embeds: vec![],
         }
     }
 

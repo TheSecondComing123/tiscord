@@ -56,7 +56,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Terminal graphics: {:?}", terminal_caps.graphics);
 
     // Create store and app
-    let store = std::sync::Arc::new(std::sync::RwLock::new(store::Store::new()));
+    let mut initial_store = store::Store::new();
+    initial_store.supports_images = terminal_caps.supports_images();
+    let store = std::sync::Arc::new(std::sync::RwLock::new(initial_store));
     let mut app = app::App::new(store, action_tx, discord_event_rx, config, terminal_caps);
 
     // Init terminal and run
