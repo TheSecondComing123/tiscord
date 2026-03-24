@@ -21,6 +21,8 @@ pub struct ChannelInfo {
     pub topic: Option<String>,
     /// Whether the channel is marked as NSFW.
     pub nsfw: bool,
+    /// Slowmode delay in seconds (0 means no slowmode).
+    pub rate_limit_per_user: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +167,7 @@ mod tests {
             position,
             topic: None,
             nsfw: false,
+            rate_limit_per_user: None,
         }
     }
 

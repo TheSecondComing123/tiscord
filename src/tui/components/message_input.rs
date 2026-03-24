@@ -28,6 +28,7 @@ enum AutocompleteKind {
     None,
     Mention,
     Emoji,
+    Channel,
 }
 
 struct AutocompleteState {
@@ -53,6 +54,15 @@ impl AutocompleteState {
 
     fn is_active(&self) -> bool {
         self.kind != AutocompleteKind::None
+    }
+}
+
+/// Map an autocomplete trigger character to the appropriate `AutocompleteKind`.
+fn autocomplete_kind_for(trigger_char: char) -> AutocompleteKind {
+    match trigger_char {
+        '@' => AutocompleteKind::Mention,
+        '#' => AutocompleteKind::Channel,
+        _ => AutocompleteKind::Emoji,
     }
 }
 
@@ -252,7 +262,9 @@ impl MessageInput {
     /// Scan backward from cursor to detect an active autocomplete trigger.
     ///
     /// Returns `Some((trigger_char, trigger_pos, query))` when the cursor is
-    /// inside a `@<word>` or `:<word>` run with at least one query character.
+    /// inside a `@<word>`, `:<word>`, or `#<word>` run with at least one query
+    /// character. Hyphens are included in the word chars to support Discord
+    /// channel names like `general-chat`.
     fn detect_trigger(&self) -> Option<(char, usize, String)> {
         if self.cursor_pos == 0 {
             return None;
@@ -260,8 +272,12 @@ impl MessageInput {
         let chars: Vec<char> = self.content.chars().collect();
         let mut pos = self.cursor_pos;
 
-        // Walk backward while we see word chars (alphanumeric or `_`).
-        while pos > 0 && (chars[pos - 1].is_alphanumeric() || chars[pos - 1] == '_') {
+        // Walk backward while we see word chars (alphanumeric, `_`, or `-`).
+        while pos > 0
+            && (chars[pos - 1].is_alphanumeric()
+                || chars[pos - 1] == '_'
+                || chars[pos - 1] == '-')
+        {
             pos -= 1;
         }
 
@@ -271,7 +287,7 @@ impl MessageInput {
         }
 
         let trigger_char = chars[pos - 1];
-        if trigger_char != '@' && trigger_char != ':' {
+        if trigger_char != '@' && trigger_char != ':' && trigger_char != '#' {
             return None;
         }
 
@@ -330,6 +346,31 @@ impl MessageInput {
                     .into_iter()
                     .take(MAX_SUGGESTIONS)
                     .map(|(_, name, ch)| (format!("{} :{name}:", ch), ch.to_string()))
+                    .collect();
+            }
+
+            AutocompleteKind::Channel => {
+                let channels = store
+                    .ui
+                    .selected_guild
+                    .map(|gid| store.guilds.get_channels_for_guild(gid))
+                    .unwrap_or_default();
+
+                let mut scored: Vec<(i64, String, String)> = channels
+                    .iter()
+                    .filter(|ch| ch.kind != crate::store::guilds::ChannelKind::Category
+                        && ch.kind != crate::store::guilds::ChannelKind::Voice)
+                    .filter_map(|ch| {
+                        matcher
+                            .fuzzy_match(&ch.name, &query)
+                            .map(|score| (score, ch.name.clone(), format!("<#{}>", ch.id)))
+                    })
+                    .collect();
+                scored.sort_by(|a, b| b.0.cmp(&a.0));
+                self.autocomplete.suggestions = scored
+                    .into_iter()
+                    .take(MAX_SUGGESTIONS)
+                    .map(|(_, disp, ins)| (format!("# {}", disp), ins))
                     .collect();
             }
         }
@@ -458,11 +499,7 @@ impl Component for MessageInput {
                     if let Some((trigger_char, trigger_pos, query)) = self.detect_trigger() {
                         self.autocomplete.trigger_pos = trigger_pos;
                         self.autocomplete.query = query;
-                        self.autocomplete.kind = if trigger_char == '@' {
-                            AutocompleteKind::Mention
-                        } else {
-                            AutocompleteKind::Emoji
-                        };
+                        self.autocomplete.kind = autocomplete_kind_for(trigger_char);
                         self.update_suggestions(store);
                     } else {
                         self.autocomplete = AutocompleteState::inactive();
@@ -478,11 +515,7 @@ impl Component for MessageInput {
                     if let Some((trigger_char, trigger_pos, query)) = self.detect_trigger() {
                         self.autocomplete.trigger_pos = trigger_pos;
                         self.autocomplete.query = query;
-                        self.autocomplete.kind = if trigger_char == '@' {
-                            AutocompleteKind::Mention
-                        } else {
-                            AutocompleteKind::Emoji
-                        };
+                        self.autocomplete.kind = autocomplete_kind_for(trigger_char);
                         self.update_suggestions(store);
                     } else {
                         self.autocomplete = AutocompleteState::inactive();
@@ -545,11 +578,7 @@ impl Component for MessageInput {
                     // Check whether we just triggered autocomplete.
                     if let Some((trigger_char, trigger_pos, query)) = self.detect_trigger() {
                         self.autocomplete = AutocompleteState {
-                            kind: if trigger_char == '@' {
-                                AutocompleteKind::Mention
-                            } else {
-                                AutocompleteKind::Emoji
-                            },
+                            kind: autocomplete_kind_for(trigger_char),
                             query,
                             trigger_pos,
                             suggestions: Vec::new(),
@@ -695,8 +724,8 @@ impl Component for MessageInput {
             chunks[0]
         };
 
-        // Resolve channel name for placeholder.
-        let channel_name: String = store
+        // Resolve channel name and slowmode for placeholder.
+        let (channel_name, channel_slowmode): (String, Option<u64>) = store
             .ui
             .selected_guild
             .and_then(|gid| {
@@ -705,10 +734,10 @@ impl Component for MessageInput {
                     channels
                         .into_iter()
                         .find(|ch| ch.id == cid)
-                        .map(|ch| ch.name.clone())
+                        .map(|ch| (ch.name.clone(), ch.rate_limit_per_user))
                 })
             })
-            .unwrap_or_else(|| "channel".to_string());
+            .unwrap_or_else(|| ("channel".to_string(), None));
 
         let border_style = if focused {
             Style::default().fg(theme::ACCENT)
@@ -726,7 +755,11 @@ impl Component for MessageInput {
         frame.render_widget(block, input_area);
 
         if self.content.is_empty() {
-            let placeholder = format!("Message #{}...", channel_name);
+            let placeholder = if let Some(delay) = channel_slowmode.filter(|&d| d > 0) {
+                format!("Message #{}...  Slowmode: {}s", channel_name, delay)
+            } else {
+                format!("Message #{}...", channel_name)
+            };
             let p = Paragraph::new(Span::styled(placeholder, theme::muted()));
             frame.render_widget(p, inner);
         } else {

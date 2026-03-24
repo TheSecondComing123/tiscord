@@ -168,6 +168,7 @@ impl Store {
                             position: ch.position,
                             topic: None, // ReadyChannel doesn't carry topic
                             nsfw: false, // ReadyChannel doesn't carry nsfw
+                            rate_limit_per_user: None, // ReadyChannel doesn't carry rate_limit_per_user
                         })
                         .collect();
                     tracing::debug!("guild {} has {} channels, {} members from Ready", rg.name, channels.len(), rg.members.len());
@@ -221,6 +222,7 @@ impl Store {
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
                         nsfw: ch.nsfw.unwrap_or(false),
+                        rate_limit_per_user: ch.rate_limit_per_user.map(|v| v as u64),
                     })
                     .collect();
 
@@ -254,6 +256,7 @@ impl Store {
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
                         nsfw: ch.nsfw.unwrap_or(false),
+                        rate_limit_per_user: ch.rate_limit_per_user.map(|v| v as u64),
                     };
                     self.guilds.add_channel_to_guild(guild_id, info);
                     tracing::debug!("channel create: {}", ch.id);
@@ -283,6 +286,7 @@ impl Store {
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
                         nsfw: ch.nsfw.unwrap_or(false),
+                        rate_limit_per_user: ch.rate_limit_per_user.map(|v| v as u64),
                     };
                     self.guilds.update_channel_in_guild(guild_id, info);
                     tracing::debug!("channel update: {}", ch.id);
@@ -406,6 +410,7 @@ impl Store {
                         position: ch.position.unwrap_or(0),
                         topic: ch.topic.clone(),
                         nsfw: ch.nsfw.unwrap_or(false),
+                        rate_limit_per_user: ch.rate_limit_per_user.map(|v| v as u64),
                     })
                     .collect();
                 // Update the guild's channels
@@ -708,6 +713,7 @@ mod tests {
             position: 1,
             topic: None,
             nsfw: false,
+            rate_limit_per_user: None,
         };
         store.guilds.add_channel_to_guild(Id::new(1), ch);
 

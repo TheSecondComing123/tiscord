@@ -160,8 +160,15 @@ impl Component for ChannelTree {
                     let has_unread = store.notifications.has_unreads(ch.id);
                     let has_mention = store.notifications.has_mentions(ch.id);
 
+                    let has_slowmode = ch.rate_limit_per_user.map(|r| r > 0).unwrap_or(false);
                     let name = if ch.nsfw {
-                        format!("🔞 {}", ch.name)
+                        if has_slowmode {
+                            format!("🔞 {} \u{1f40c}", ch.name)
+                        } else {
+                            format!("🔞 {}", ch.name)
+                        }
+                    } else if has_slowmode {
+                        format!("# {} \u{1f40c}", ch.name)
                     } else {
                         format!("# {}", ch.name)
                     };
