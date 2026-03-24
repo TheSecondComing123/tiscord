@@ -228,42 +228,60 @@ pub async fn run_gateway(
     event_tx: mpsc::UnboundedSender<DiscordEvent>,
 ) -> Result<()> {
     let intents = required_intents();
-    tracing::info!("connecting to discord gateway...");
-    let mut shard = Shard::new(ShardId::ONE, token, intents);
-    tracing::info!("shard created, starting event loop");
+    let mut attempt = 0u32;
 
     loop {
-        match shard.next_event(EventTypeFlags::all()).await {
-            Some(Ok(event)) => {
-                if let Some(discord_event) = translate_event(event) {
-                    tracing::debug!("discord event: {:?}", std::mem::discriminant(&discord_event));
-                    let _ = event_tx.send(discord_event);
-                }
-            }
-            Some(Err(e)) => {
-                let err_str = e.to_string();
-                // Check if this is a failed READY parse - extract data manually
-                if err_str.contains("\"t\":\"READY\"") || err_str.contains("t\":\"READY") {
-                    tracing::info!("parsing user-account READY event manually");
-                    // The error message contains the raw JSON - extract it
-                    if let Some(start) = err_str.find("event={") {
-                        let raw = &err_str[start + 6..];
-                        if let Some(evt) = try_parse_ready_from_raw(raw) {
-                            let _ = event_tx.send(evt);
-                        } else {
-                            tracing::error!("failed to manually parse READY");
-                        }
+        if attempt > 0 {
+            // Signal reconnecting status to the UI.
+            let _ = event_tx.send(DiscordEvent::GatewayReconnect);
+            tracing::info!("reconnecting to discord gateway (attempt {})...", attempt);
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        } else {
+            tracing::info!("connecting to discord gateway...");
+        }
+
+        let mut shard = Shard::new(ShardId::ONE, token.clone(), intents);
+        tracing::info!("shard created, starting event loop");
+
+        'inner: loop {
+            match shard.next_event(EventTypeFlags::all()).await {
+                Some(Ok(event)) => {
+                    if let Some(discord_event) = translate_event(event) {
+                        tracing::debug!("discord event: {:?}", std::mem::discriminant(&discord_event));
+                        let _ = event_tx.send(discord_event);
                     }
-                } else {
-                    tracing::debug!("skipping unparseable gateway event: {e}");
                 }
-                continue;
+                Some(Err(e)) => {
+                    let err_str = e.to_string();
+                    // Check if this is a failed READY parse - extract data manually
+                    if err_str.contains("\"t\":\"READY\"") || err_str.contains("t\":\"READY") {
+                        tracing::info!("parsing user-account READY event manually");
+                        // The error message contains the raw JSON - extract it
+                        if let Some(start) = err_str.find("event={") {
+                            let raw = &err_str[start + 6..];
+                            if let Some(evt) = try_parse_ready_from_raw(raw) {
+                                let _ = event_tx.send(evt);
+                            } else {
+                                tracing::error!("failed to manually parse READY");
+                            }
+                        }
+                    } else {
+                        tracing::debug!("skipping unparseable gateway event: {e}");
+                    }
+                    continue 'inner;
+                }
+                None => {
+                    tracing::warn!("gateway stream ended, will reconnect in 5 seconds");
+                    let _ = event_tx.send(DiscordEvent::GatewayDisconnect);
+                    break 'inner;
+                }
             }
-            None => {
-                tracing::warn!("gateway stream ended");
-                let _ = event_tx.send(DiscordEvent::GatewayDisconnect);
-                break;
-            }
+        }
+
+        attempt += 1;
+        // If the sender is closed (app exited), stop reconnecting.
+        if event_tx.is_closed() {
+            break;
         }
     }
 

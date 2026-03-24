@@ -103,6 +103,14 @@ pub enum Action {
     SetStatus {
         status: String,
     },
+    /// Set the current user's custom status (emoji + text).
+    /// NOTE: This requires sending a gateway opcode 3 UPDATE_PRESENCE with a custom activity.
+    /// Twilight-gateway does not expose this for user accounts; the custom status is stored
+    /// locally in UiState and displayed in the status bar.
+    SetCustomStatus {
+        emoji: Option<String>,
+        text: Option<String>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -425,6 +433,7 @@ pub async fn run_action_handler(
                                             })
                                             .collect(),
                                         embeds: vec![],
+                                        stickers: vec![],
                                     }
                                 })
                                 .collect();
@@ -546,6 +555,16 @@ pub async fn run_action_handler(
                 // the status bar reflects the change immediately. A raw WebSocket message
                 // would be needed to actually change the status on Discord's servers.
                 tracing::debug!("SetStatus requested: {status} (local-only; gateway update not yet implemented)");
+            }
+            Action::SetCustomStatus { emoji, text } => {
+                // TODO: Setting a custom status requires sending a gateway opcode 3
+                // UPDATE_PRESENCE payload with an activity of type Custom (4) containing
+                // the emoji and state fields. Twilight-gateway does not expose this for
+                // user accounts. The custom status is stored locally in UiState and
+                // surfaced in the status bar. A real implementation would need to send:
+                //   {"op":3,"d":{"since":null,"activities":[{"type":4,"name":"Custom Status",
+                //     "state":<text>,"emoji":{"name":<emoji>}}],"status":"online","afk":false}}
+                tracing::debug!("SetCustomStatus: emoji={:?} text={:?} (local-only; gateway update not implemented)", emoji, text);
             }
             Action::FetchDmChannels => {
                 // twilight-http doesn't expose GET /users/@me/channels.
