@@ -251,6 +251,22 @@ pub fn parse(input: &str) -> Vec<Span<'_>> {
             }
         }
 
+        // ── Discord message link  https://discord.com/channels/... ─────────
+        // Must be checked before the generic URL handler.
+        if bytes[i] == b'h' && input[i..].starts_with("https://discord.com/channels/") {
+            let end = url_end(input, i);
+            flush_plain!(i);
+            spans.push(Span::styled(
+                "[jump to message]",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::UNDERLINED),
+            ));
+            i = end;
+            plain_start = i;
+            continue;
+        }
+
         // ── URL  http(s)://... ───────────────────────────────────────────────
         if (bytes[i] == b'h')
             && input[i..].starts_with("https://")
