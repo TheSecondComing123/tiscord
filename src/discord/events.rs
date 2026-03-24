@@ -120,6 +120,10 @@ pub enum DiscordEvent {
         url: String,
         image: crate::store::images::CachedImage,
     },
+    /// An API action failed; carry a short user-friendly message to display.
+    ActionError {
+        message: String,
+    },
 }
 
 /// Guild data extracted from the user account Ready payload.

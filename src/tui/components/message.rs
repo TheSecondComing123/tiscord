@@ -137,6 +137,7 @@ mod tests {
             attachments: vec![],
             is_edited: false,
             reactions: vec![],
+            embeds: vec![],
         }
     }
 
