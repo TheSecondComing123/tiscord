@@ -103,6 +103,53 @@ impl MessageList {
     pub fn set_fetching_history(&self) {
         self.is_fetching_history.set(true);
     }
+
+    /// Render the list of active threads for a forum channel.
+    fn render_forum_threads(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        store: &Store,
+        channel_id: twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>,
+    ) {
+        use ratatui::widgets::{Block, Borders, List, ListItem};
+        let threads = store.active_threads.get(&channel_id);
+        match threads {
+            None => {
+                let placeholder = Paragraph::new("Loading threads...")
+                    .style(theme::muted())
+                    .alignment(Alignment::Center);
+                frame.render_widget(placeholder, area);
+            }
+            Some(threads) if threads.is_empty() => {
+                let placeholder = Paragraph::new("No active threads in this forum")
+                    .style(theme::muted())
+                    .alignment(Alignment::Center);
+                frame.render_widget(placeholder, area);
+            }
+            Some(threads) => {
+                let items: Vec<ListItem> = threads
+                    .iter()
+                    .map(|t| {
+                        let label = format!(
+                            "  {}  ({} messages)",
+                            t.name, t.message_count
+                        );
+                        ListItem::new(Line::from(Span::styled(label, theme::secondary_text())))
+                    })
+                    .collect();
+
+                let block = Block::default()
+                    .title("Forum Threads")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme::BORDER))
+                    .style(Style::default().bg(theme::BG));
+
+                let list = List::new(items).block(block).highlight_style(theme::selected());
+                frame.render_widget(list, area);
+            }
+        }
+    }
 }
 
 impl Component for MessageList {
@@ -326,6 +373,20 @@ impl Component for MessageList {
             self.last_channel_id.set(Some(channel_raw));
         }
 
+        // Check if this is a forum channel — if so, show thread list instead of messages.
+        let is_forum = store
+            .ui
+            .selected_guild
+            .and_then(|gid| store.guilds.get_guild(gid))
+            .and_then(|g| g.channels.iter().find(|c| c.id == channel_id))
+            .map(|c| c.kind == crate::store::guilds::ChannelKind::Forum)
+            .unwrap_or(false);
+
+        if is_forum {
+            self.render_forum_threads(frame, area, store, channel_id);
+            return;
+        }
+
         let buffer = match store.messages.get(&channel_id) {
             Some(buf) => buf,
             None => {
@@ -409,20 +470,30 @@ impl Component for MessageList {
             }
 
             // Insert a date separator when the calendar day changes.
+            // In compact mode, skip date separators to reduce vertical noise.
             let cur_date = message_date(&msg.timestamp);
-            if let Some(date) = cur_date {
-                if prev_date != Some(date) {
-                    let sep = date_separator_line(date, msg_area.width);
-                    all_lines.push(sep);
-                    // Owned by the current message so it highlights together with it.
-                    line_owners.push(msg_idx);
+            if !store.ui.compact_mode {
+                if let Some(date) = cur_date {
+                    if prev_date != Some(date) {
+                        let sep = date_separator_line(date, msg_area.width);
+                        all_lines.push(sep);
+                        // Owned by the current message so it highlights together with it.
+                        line_owners.push(msg_idx);
+                    }
                 }
+            }
+            if let Some(date) = cur_date {
                 prev_date = Some(date);
             }
 
             // Determine whether this message is compact (same author, within 5 minutes,
             // no date boundary, no reply context).
-            let compact = if msg_idx == 0 || msg.reply_to.is_some() {
+            // In compact mode, suppress headers for all consecutive same-author messages.
+            let compact = if store.ui.compact_mode {
+                msg_idx > 0
+                    && msg.reply_to.is_none()
+                    && messages[msg_idx - 1].author_id == msg.author_id
+            } else if msg_idx == 0 || msg.reply_to.is_some() {
                 false
             } else {
                 let prev = &messages[msg_idx - 1];

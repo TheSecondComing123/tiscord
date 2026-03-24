@@ -90,6 +90,8 @@ pub struct UiState {
     pub custom_status_text: Option<String>,
     /// When Some, the custom-status input bar is open; value is the text being typed.
     pub custom_status_input: Option<String>,
+    /// Compact display mode: reduces spacing between messages when true.
+    pub compact_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +119,7 @@ impl Default for UiState {
             selected_message_timestamp: None,
             custom_status_text: None,
             custom_status_input: None,
+            compact_mode: false,
         }
     }
 }

@@ -435,6 +435,12 @@ impl App {
                     }
                     return Ok(());
                 }
+                KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    // Ctrl+Shift+C: toggle compact display mode
+                    let mut store = self.store.write().unwrap();
+                    store.ui.compact_mode = !store.ui.compact_mode;
+                    return Ok(());
+                }
                 _ => {}
             }
         }
