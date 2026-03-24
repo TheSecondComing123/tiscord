@@ -91,6 +91,20 @@ pub fn render_message_full(msg: &StoredMessage, _width: u16, thread: Option<&Thr
         lines.push(Line::from(Span::styled(text, theme::secondary_text())));
     }
 
+    // ── poll ─────────────────────────────────────────────────────────────────
+    if let Some(poll) = &msg.poll {
+        lines.push(Line::from(Span::styled(
+            format!("\u{1f4ca} {}", poll.question),
+            Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+        )));
+        for answer in &poll.answers {
+            lines.push(Line::from(Span::styled(
+                format!("  \u{25aa} {} ({} votes)", answer.text, answer.count),
+                theme::secondary_text(),
+            )));
+        }
+    }
+
     // ── embeds ────────────────────────────────────────────────────────────────
     for embed in &msg.embeds {
         let bar = "│ ";
@@ -210,6 +224,7 @@ mod tests {
             reactions: vec![],
             embeds: vec![],
             stickers: vec![],
+            poll: None,
         }
     }
 

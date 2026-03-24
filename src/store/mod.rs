@@ -185,6 +185,34 @@ impl Store {
                 .unwrap_or(false)
     }
 
+    /// Whether the given user is blocked.
+    pub fn is_user_blocked(&self, user_id: Id<UserMarker>) -> bool {
+        self.relationships
+            .iter()
+            .any(|r| r.user_id == user_id && r.kind == RelationshipKind::Blocked)
+    }
+
+    /// Block a user locally. Adds or updates the relationship entry.
+    pub fn block_user(&mut self, user_id: Id<UserMarker>, username: String) {
+        if let Some(rel) = self.relationships.iter_mut().find(|r| r.user_id == user_id) {
+            rel.kind = RelationshipKind::Blocked;
+        } else {
+            self.relationships.push(Relationship {
+                user_id,
+                username,
+                kind: RelationshipKind::Blocked,
+            });
+        }
+        tracing::debug!("blocked user {user_id} locally");
+    }
+
+    /// Unblock a user locally. Removes the blocked relationship entry.
+    pub fn unblock_user(&mut self, user_id: Id<UserMarker>) {
+        self.relationships
+            .retain(|r| !(r.user_id == user_id && r.kind == RelationshipKind::Blocked));
+        tracing::debug!("unblocked user {user_id} locally");
+    }
+
     pub fn process_discord_event(&mut self, event: DiscordEvent) {
         match event {
             DiscordEvent::Ready(ready) => {

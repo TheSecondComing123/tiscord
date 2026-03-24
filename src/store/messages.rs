@@ -40,6 +40,18 @@ pub struct EmbedField {
 }
 
 #[derive(Debug, Clone)]
+pub struct PollAnswer {
+    pub text: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct PollInfo {
+    pub question: String,
+    pub answers: Vec<PollAnswer>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StoredMessage {
     pub id: Id<MessageMarker>,
     pub author_name: String,
@@ -52,6 +64,7 @@ pub struct StoredMessage {
     pub reactions: Vec<Reaction>,
     pub embeds: Vec<Embed>,
     pub stickers: Vec<StickerInfo>,
+    pub poll: Option<PollInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -185,6 +198,7 @@ mod tests {
             reactions: vec![],
             embeds: vec![],
             stickers: vec![],
+            poll: None,
         }
     }
 
