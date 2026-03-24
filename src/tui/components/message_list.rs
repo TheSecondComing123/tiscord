@@ -48,6 +48,26 @@ impl MessageList {
         self.is_fetching_history.set(false);
         self.last_message_count.set(0);
     }
+
+    /// Scroll messages by a signed delta. Positive = newer, negative = older.
+    /// Returns true if we hit the top and should fetch older history.
+    pub fn scroll_by(&self, delta: isize, message_count: usize) -> bool {
+        if message_count == 0 {
+            return false;
+        }
+        let last = message_count - 1;
+        let current = self.selected_index.get().unwrap_or(last) as isize;
+        let new_idx = (current + delta).clamp(0, last as isize) as usize;
+        self.selected_index.set(Some(new_idx));
+        self.auto_scroll.set(new_idx == last);
+        // Return true if we hit the top and should fetch older messages
+        new_idx == 0 && !self.is_fetching_history.get()
+    }
+
+    /// Mark that we're fetching history (prevents duplicate fetches).
+    pub fn set_fetching_history(&self) {
+        self.is_fetching_history.set(true);
+    }
 }
 
 impl Component for MessageList {
