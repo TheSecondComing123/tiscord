@@ -66,6 +66,16 @@ impl Component for ChannelHeader {
                             ));
                         }
                     }
+                    // Show loaded message count for the current channel.
+                    if let Some(buffer) = store.messages.get(&channel_id) {
+                        let count = buffer.len();
+                        if count > 0 {
+                            spans.push(Span::styled(
+                                format!("  [{} messages loaded]", count),
+                                Style::default().fg(theme::TEXT_MUTED),
+                            ));
+                        }
+                    }
                 }
             }
         }

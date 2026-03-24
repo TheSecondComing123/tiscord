@@ -1,80 +1,98 @@
 # Roadmap
 
-## In Progress
+## Completed
 
 ### Message Display Polish
-- [ ] Date separators between messages from different days
-- [ ] "New messages" unread separator line
-- [ ] Message grouping (consecutive messages from same author collapse header)
-- [ ] Send typing indicator when user is typing
+
+- [x] Date separators between messages from different days
+- [x] "New messages" unread separator line
+- [x] Message grouping (consecutive messages from same author collapse header)
+- [x] Send typing indicator when user is typing
 
 ### Markdown Improvements
-- [ ] Blockquotes (`> text`)
-- [ ] Masked links (`[text](url)`)
-- [ ] Emoji shortcodes (`:thumbsup:` → emoji)
-- [ ] Underline (`__text__`)
+
+- [x] Blockquotes (`> text`)
+- [x] Masked links (`[text](url)`)
+- [x] Emoji shortcodes (`:thumbsup:` → emoji)
+- [x] Underline (`__text__`)
 
 ### Input Improvements
-- [ ] `@mention` autocomplete (fuzzy search members while typing)
-- [ ] `#channel` autocomplete
-- [ ] `:emoji:` autocomplete
-- [ ] Paste support (Ctrl+V / terminal paste)
-- [ ] Send typing indicator while composing
-- [ ] Draft persistence (save input when switching channels)
 
-### Search (currently stubbed)
-- [ ] Implement raw HTTP search request (bypass twilight-http)
-- [ ] Query highlighting in results
-- [ ] Search filters (from:, has:, before:, after:)
+- [x] `@mention` autocomplete (fuzzy search members while typing)
+- [x] `#channel` autocomplete
+- [x] `:emoji:` autocomplete
+- [x] Paste support (Ctrl+V / terminal paste)
+- [x] Send typing indicator while composing
+- [x] Draft persistence (save input when switching channels)
+
+### Search
+
+- [x] Implement raw HTTP search request (bypass twilight-http)
+- [x] Query highlighting in results
+- [x] Search filters (from:, has:, before:, after:)
 
 ### Online Status
-- [ ] Track online/idle/dnd/offline from PresenceUpdate events
-- [ ] Show status dots in member sidebar
-- [ ] Sort members by online status
 
-## Planned
+- [x] Track online/idle/dnd/offline from PresenceUpdate events
+- [x] Show status dots in member sidebar
+- [x] Sort members by online status
 
-### Notifications
-- [ ] Desktop notifications via `notify-rust`
-- [ ] Sound alerts on mention
-- [ ] Channel/server mute controls
-- [ ] Window title badge with unread count
+### Notification System
+
+- [x] Desktop notifications via `notify-rust`
+- [x] Channel/server mute controls
+- [x] Window title badge with unread count
 
 ### Channel Management
-- [ ] Channel topic display in header
-- [ ] Category collapse/expand toggle
-- [ ] NSFW channel indicator
-- [ ] Slowmode indicator
-- [ ] Forum channel thread listing
 
-### Message Features
-- [ ] Sticker display (name + description fallback)
-- [ ] Poll rendering
-- [ ] Message components (buttons rendered as text labels)
-- [ ] Embed images/thumbnails (with Kitty/Sixel)
-- [ ] Embed color bar (use embed color field)
-- [ ] Full edit timestamp on hover
+- [x] Channel topic display in header
+- [x] Category collapse/expand toggle
+- [x] NSFW channel indicator
+- [x] Slowmode indicator
+- [x] Forum channel thread listing
 
-### User Features
-- [ ] Set own custom status
-- [ ] Set online/idle/dnd/invisible status
-- [ ] Friend list / pending requests
-- [ ] Block/unblock users
+### Message Rendering
+
+- [x] Sticker display (name + description fallback)
+- [x] Poll rendering
+- [x] Message components (buttons rendered as text labels)
+- [x] Embed images/thumbnails (with Kitty)
+- [x] Embed color bar (use embed color field)
+
+### User Account
+
+- [x] Set own custom status
+- [x] Set online/idle/dnd/invisible status
+- [x] Friend list / pending requests
+- [x] Block/unblock users
+
+### Caching and Cleanup
+
+- [x] Background cleanup of expired typing indicators
+- [x] Bounded profile cache (cap at N entries)
+
+## In Progress
+
+### Remaining Features
+
+- [ ] Sound alerts on mention
+- [x] Full edit timestamp on hover
 - [ ] User notes
 
 ### Moderation (for server admins)
+
 - [ ] Kick/ban members
 - [ ] Timeout members
 - [ ] Delete messages in bulk
 - [ ] View audit log
 
-### Performance
+### Advanced Performance
+
 - [ ] Lazy message loading (only fetch visible range)
-- [ ] Bounded profile cache (cap at N entries)
-- [ ] Background cleanup of expired typing indicators
 - [ ] Persistent message cache across restarts
 
 ### Sixel Image Protocol
+
 - [ ] Sixel encoding for iTerm2/mintty terminals
 - [ ] Image thumbnail sizing based on terminal cell dimensions
 

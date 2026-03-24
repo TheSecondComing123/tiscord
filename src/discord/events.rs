@@ -17,6 +17,7 @@ pub enum DiscordEvent {
         channel_id: Id<ChannelMarker>,
         message_id: Id<MessageMarker>,
         content: Option<String>,
+        edited_timestamp: Option<String>,
     },
     MessageDelete {
         channel_id: Id<ChannelMarker>,
@@ -184,6 +185,7 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
             channel_id: mu.channel_id,
             message_id: mu.id,
             content: Some(mu.0.content.clone()),
+            edited_timestamp: mu.0.edited_timestamp.map(|ts| ts.iso_8601().to_string()),
         }),
         Event::MessageDelete(md) => Some(DiscordEvent::MessageDelete {
             channel_id: md.channel_id,

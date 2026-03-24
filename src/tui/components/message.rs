@@ -25,6 +25,17 @@ pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Opti
     render_message_full(msg, _width, thread, supports_images, false)
 }
 
+/// Render a message that belongs to a blocked user as a single dim placeholder line.
+pub fn render_blocked_message(msg: &StoredMessage) -> Vec<Line<'static>> {
+    let text = format!("{} — [Blocked message]", msg.author_name);
+    vec![Line::from(Span::styled(
+        text,
+        ratatui::style::Style::default()
+            .fg(theme::TEXT_MUTED)
+            .add_modifier(Modifier::DIM),
+    ))]
+}
+
 /// Full rendering function that accepts all parameters including `compact`.
 pub fn render_message_full(msg: &StoredMessage, _width: u16, thread: Option<&ThreadInfo>, supports_images: bool, compact: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -102,6 +113,21 @@ pub fn render_message_full(msg: &StoredMessage, _width: u16, thread: Option<&Thr
                 format!("  \u{25aa} {} ({} votes)", answer.text, answer.count),
                 theme::secondary_text(),
             )));
+        }
+    }
+
+    // ── components ───────────────────────────────────────────────────────────
+    if !msg.components.is_empty() {
+        for component in &msg.components {
+            let text = match (component.kind.as_str(), &component.label) {
+                ("Button", Some(label)) => format!("[Button: {}]", label),
+                ("Button", None) => "[Button]".to_string(),
+                ("Select", Some(placeholder)) => format!("[Select: {}]", placeholder),
+                ("Select", None) => "[Select]".to_string(),
+                (kind, Some(label)) => format!("[{}: {}]", kind, label),
+                (kind, None) => format!("[{}]", kind),
+            };
+            lines.push(Line::from(Span::styled(text, theme::muted())));
         }
     }
 
@@ -221,10 +247,12 @@ mod tests {
             reply_to: None,
             attachments: vec![],
             is_edited: false,
+            edited_timestamp: None,
             reactions: vec![],
             embeds: vec![],
             stickers: vec![],
             poll: None,
+            components: vec![],
         }
     }
 

@@ -117,6 +117,17 @@ pub enum Action {
         /// The forum channel whose threads are of interest (for routing the response).
         channel_id: Id<ChannelMarker>,
     },
+    /// Block a user. Discord's API: PUT /users/@me/relationships/{user_id} with type=2.
+    /// NOTE: twilight-http does not expose relationship management for user accounts.
+    /// This stubs the action; the blocked state is tracked locally in Store::relationships.
+    BlockUser {
+        user_id: Id<UserMarker>,
+    },
+    /// Unblock a previously blocked user. Discord's API: DELETE /users/@me/relationships/{user_id}.
+    /// NOTE: Same stub caveat as BlockUser.
+    UnblockUser {
+        user_id: Id<UserMarker>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -415,7 +426,8 @@ pub async fn run_action_handler(
                                                 url: a.url.clone(),
                                             })
                                             .collect(),
-                                        is_edited: false,
+                                        is_edited: msg.edited_timestamp.is_some(),
+                                        edited_timestamp: msg.edited_timestamp.map(|ts| ts.iso_8601().to_string()),
                                         reactions: msg
                                             .reactions
                                             .iter()
@@ -440,6 +452,8 @@ pub async fn run_action_handler(
                                             .collect(),
                                         embeds: vec![],
                                         stickers: vec![],
+                                        poll: None,
+                                        components: vec![],
                                     }
                                 })
                                 .collect();
@@ -612,6 +626,26 @@ pub async fn run_action_handler(
                         });
                     }
                 }
+            }
+            Action::BlockUser { user_id } => {
+                // TODO: twilight-http does not expose relationship management for user accounts.
+                // A real implementation would send:
+                //   PUT /users/@me/relationships/{user_id}  body: {"type":2}
+                // The blocked state is tracked locally in Store::relationships by the App.
+                tracing::debug!("BlockUser {user_id}: local-only (REST not yet implemented for user accounts)");
+                let _ = event_tx.send(DiscordEvent::ActionError {
+                    message: format!("Block stubbed — user {user_id} marked blocked locally"),
+                });
+            }
+            Action::UnblockUser { user_id } => {
+                // TODO: twilight-http does not expose relationship management for user accounts.
+                // A real implementation would send:
+                //   DELETE /users/@me/relationships/{user_id}
+                // The unblock is performed locally in Store::relationships by the App.
+                tracing::debug!("UnblockUser {user_id}: local-only (REST not yet implemented for user accounts)");
+                let _ = event_tx.send(DiscordEvent::ActionError {
+                    message: format!("Unblock stubbed — user {user_id} unblocked locally"),
+                });
             }
             Action::FetchImage { url, channel_id: _, message_id: _ } => {
                 let client = reqwest::Client::new();

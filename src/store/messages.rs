@@ -52,6 +52,12 @@ pub struct PollInfo {
 }
 
 #[derive(Debug, Clone)]
+pub struct ComponentInfo {
+    pub kind: String,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StoredMessage {
     pub id: Id<MessageMarker>,
     pub author_name: String,
@@ -61,10 +67,12 @@ pub struct StoredMessage {
     pub reply_to: Option<ReplyContext>,
     pub attachments: Vec<Attachment>,
     pub is_edited: bool,
+    pub edited_timestamp: Option<String>,
     pub reactions: Vec<Reaction>,
     pub embeds: Vec<Embed>,
     pub stickers: Vec<StickerInfo>,
     pub poll: Option<PollInfo>,
+    pub components: Vec<ComponentInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,10 +120,13 @@ impl MessageBuffer {
         self.messages.retain(|m| m.id != id);
     }
 
-    pub fn update(&mut self, id: Id<MessageMarker>, content: String) {
+    pub fn update(&mut self, id: Id<MessageMarker>, content: String, edited_timestamp: Option<String>) {
         if let Some(msg) = self.messages.iter_mut().find(|m| m.id == id) {
             msg.content = content;
             msg.is_edited = true;
+            if edited_timestamp.is_some() {
+                msg.edited_timestamp = edited_timestamp;
+            }
         }
     }
 
@@ -195,10 +206,12 @@ mod tests {
             reply_to: None,
             attachments: vec![],
             is_edited: false,
+            edited_timestamp: None,
             reactions: vec![],
             embeds: vec![],
             stickers: vec![],
             poll: None,
+            components: vec![],
         }
     }
 
@@ -248,11 +261,12 @@ mod tests {
         let mut buf = MessageBuffer::new(10);
         buf.push(make_test_msg(1, "original"));
 
-        buf.update(Id::new(1), "edited".to_string());
+        buf.update(Id::new(1), "edited".to_string(), Some("2026-01-01T01:00:00Z".to_string()));
 
         let msg = buf.messages().iter().find(|m| m.id == Id::new(1)).unwrap();
         assert_eq!(msg.content, "edited");
         assert!(msg.is_edited);
+        assert_eq!(msg.edited_timestamp.as_deref(), Some("2026-01-01T01:00:00Z"));
     }
 
     #[test]

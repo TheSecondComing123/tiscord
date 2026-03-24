@@ -442,7 +442,8 @@ impl Store {
                             url: a.url.clone(),
                         })
                         .collect(),
-                    is_edited: false,
+                    is_edited: msg.edited_timestamp.is_some(),
+                    edited_timestamp: msg.edited_timestamp.map(|ts| ts.iso_8601().to_string()),
                     reactions: msg
                         .reactions
                         .iter()
@@ -494,6 +495,7 @@ impl Store {
                             }).collect(),
                         }
                     }),
+                    components: extract_components(&msg.components),
                 };
                 self.get_or_create_message_buffer(channel_id).push(stored);
             }
@@ -501,10 +503,11 @@ impl Store {
                 channel_id,
                 message_id,
                 content,
+                edited_timestamp,
             } => {
                 if let Some(new_content) = content {
                     if let Some(buf) = self.messages.get_mut(&channel_id) {
-                        buf.update(message_id, new_content);
+                        buf.update(message_id, new_content, edited_timestamp);
                     }
                 }
             }
@@ -567,7 +570,8 @@ impl Store {
                                 url: a.url.clone(),
                             })
                             .collect(),
-                        is_edited: false,
+                        is_edited: msg.edited_timestamp.is_some(),
+                        edited_timestamp: msg.edited_timestamp.map(|ts| ts.iso_8601().to_string()),
                         reactions: msg
                             .reactions
                             .iter()
@@ -619,6 +623,7 @@ impl Store {
                                 }).collect(),
                             }
                         }),
+                        components: extract_components(&msg.components),
                     })
                     .collect();
                 self.get_or_create_message_buffer(channel_id).prepend(stored);
@@ -786,12 +791,41 @@ impl Store {
                 self.last_toast = Some("File sent".to_string());
                 tracing::info!("file upload completed");
             }
-            DiscordEvent::ForumThreadsLoaded { channel_id, threads } => {
-                self.active_threads.insert(channel_id, threads);
-                tracing::debug!("forum threads loaded for channel {channel_id}");
-            }
         }
     }
+}
+
+/// Extract button/select component info from a twilight message component slice.
+fn extract_components(
+    components: &[twilight_model::channel::message::Component],
+) -> Vec<messages::ComponentInfo> {
+    use twilight_model::channel::message::Component;
+    let mut out = Vec::new();
+    for comp in components {
+        match comp {
+            Component::ActionRow(row) => {
+                for child in &row.components {
+                    match child {
+                        Component::Button(btn) => {
+                            out.push(messages::ComponentInfo {
+                                kind: "Button".to_string(),
+                                label: btn.label.clone(),
+                            });
+                        }
+                        Component::SelectMenu(sel) => {
+                            out.push(messages::ComponentInfo {
+                                kind: "Select".to_string(),
+                                label: sel.placeholder.clone(),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn is_thread_channel(ct: ChannelType) -> bool {
@@ -885,10 +919,12 @@ mod tests {
                 reply_to: None,
                 attachments: vec![],
                 is_edited: false,
+                edited_timestamp: None,
                 reactions: vec![],
                 embeds: vec![],
                 stickers: vec![],
                 poll: None,
+                components: vec![],
             };
             store.get_or_create_message_buffer(channel_id).push(msg);
         }
@@ -905,10 +941,12 @@ mod tests {
                 reply_to: None,
                 attachments: vec![],
                 is_edited: false,
+                edited_timestamp: None,
                 reactions: vec![],
                 embeds: vec![],
                 stickers: vec![],
                 poll: None,
+                components: vec![],
             })
             .collect();
         store

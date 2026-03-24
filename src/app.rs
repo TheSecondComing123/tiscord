@@ -208,8 +208,10 @@ impl App {
                     } // end else (not connecting)
 
                     // Status bar
-                    let selected_ts = message_pane_ref.message_list.get_selected_timestamp(&store);
-                    render_status_bar(frame, status_area, &store, error_ref, selected_ts.as_deref());
+                    let selected_msg = message_pane_ref.message_list.get_selected_message(&store);
+                    let selected_ts = selected_msg.map(|m| m.timestamp.as_str());
+                    let edited_ts = selected_msg.and_then(|m| m.edited_timestamp.as_deref());
+                    render_status_bar(frame, status_area, &store, error_ref, selected_ts, edited_ts);
 
                     // Overlay: command palette (rendered on top of everything else).
                     if command_palette_ref.is_visible() {
@@ -638,6 +640,24 @@ impl App {
                         limit: 50,
                     });
                 }
+                // Block a user: update local relationships then forward to action handler for stub/REST.
+                Action::BlockUser { user_id } => {
+                    // Resolve a username for the store entry; fall back to the user_id string.
+                    let username = store
+                        .members
+                        .values()
+                        .flat_map(|v| v.iter())
+                        .find(|m| m.id == user_id)
+                        .map(|m| m.name.clone())
+                        .unwrap_or_else(|| format!("{user_id}"));
+                    store.block_user(user_id, username);
+                    let _ = self.action_tx.send(Action::BlockUser { user_id });
+                }
+                // Unblock a user: update local relationships then forward to action handler.
+                Action::UnblockUser { user_id } => {
+                    store.unblock_user(user_id);
+                    let _ = self.action_tx.send(Action::UnblockUser { user_id });
+                }
                 // Regular discord actions (SendMessage, FetchMessages, etc.)
                 other => {
                     let _ = self.action_tx.send(other);
@@ -696,6 +716,7 @@ fn render_status_bar(
     store: &Store,
     error_message: &Option<(String, std::time::Instant)>,
     selected_message_timestamp: Option<&str>,
+    edited_timestamp: Option<&str>,
 ) {
     use ratatui::widgets::Paragraph;
 
@@ -812,8 +833,12 @@ fn render_status_bar(
         let abs_ts = chrono::DateTime::parse_from_rfc3339(ts)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
             .unwrap_or_else(|_| ts.to_string());
+        let edit_suffix = edited_timestamp
+            .and_then(|ets| chrono::DateTime::parse_from_rfc3339(ets).ok())
+            .map(|dt| format!(" (edited {})", dt.format("%Y-%m-%d %H:%M:%S UTC")))
+            .unwrap_or_default();
         Span::styled(
-            format!(" {} {} ", focus_text, abs_ts),
+            format!(" {} {}{} ", focus_text, abs_ts, edit_suffix),
             status_bg.fg(focus_color),
         )
     } else {

@@ -11,7 +11,7 @@ use crate::store::Store;
 use crate::store::messages::StoredMessage;
 use crate::store::state::{FocusTarget, PaneView};
 use crate::tui::component::Component;
-use crate::tui::components::message::render_message_full;
+use crate::tui::components::message::{render_blocked_message, render_message_full};
 use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
 
@@ -526,7 +526,11 @@ impl Component for MessageList {
                 .and_then(|cid| store.active_threads.get(&cid))
                 .and_then(|threads| threads.iter().find(|t| t.id.get() == msg.id.get()));
 
-            let rendered = render_message_full(msg, msg_area.width, thread_info, store.supports_images, compact);
+            let rendered = if store.is_user_blocked(msg.author_id) {
+                render_blocked_message(msg)
+            } else {
+                render_message_full(msg, msg_area.width, thread_info, store.supports_images, compact)
+            };
             let line_count = rendered.len();
             all_lines.extend(rendered);
             for _ in 0..line_count {
