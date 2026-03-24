@@ -79,6 +79,10 @@ pub struct Store {
     pub profiles: profiles::ProfileCache,
     /// Image cache for inline attachment previews.
     pub image_cache: images::ImageCache,
+    /// Whether the current terminal supports inline image rendering.
+    pub supports_images: bool,
+    /// Last API error message to be surfaced as a status-bar toast. Cleared by App after reading.
+    pub last_error: Option<String>,
 }
 
 impl Store {
@@ -100,6 +104,8 @@ impl Store {
             active_threads: HashMap::new(),
             profiles: profiles::ProfileCache::default(),
             image_cache: images::ImageCache::default(),
+            supports_images: false,
+            last_error: None,
         }
     }
 
@@ -316,6 +322,19 @@ impl Store {
                             me: r.me,
                         })
                         .collect(),
+                    embeds: msg.embeds.iter().map(|e| messages::Embed {
+                        title: e.title.clone(),
+                        description: e.description.clone(),
+                        url: e.url.clone(),
+                        color: e.color,
+                        fields: e.fields.iter().map(|f| messages::EmbedField {
+                            name: f.name.clone(),
+                            value: f.value.clone(),
+                            inline: f.inline,
+                        }).collect(),
+                        footer: e.footer.as_ref().map(|f| f.text.clone()),
+                        author_name: e.author.as_ref().map(|a| a.name.clone()),
+                    }).collect(),
                 };
                 self.get_or_create_message_buffer(channel_id).push(stored);
             }
@@ -408,6 +427,19 @@ impl Store {
                                 me: r.me,
                             })
                             .collect(),
+                        embeds: msg.embeds.iter().map(|e| messages::Embed {
+                            title: e.title.clone(),
+                            description: e.description.clone(),
+                            url: e.url.clone(),
+                            color: e.color,
+                            fields: e.fields.iter().map(|f| messages::EmbedField {
+                                name: f.name.clone(),
+                                value: f.value.clone(),
+                                inline: f.inline,
+                            }).collect(),
+                            footer: e.footer.as_ref().map(|f| f.text.clone()),
+                            author_name: e.author.as_ref().map(|a| a.name.clone()),
+                        }).collect(),
                     })
                     .collect();
                 self.get_or_create_message_buffer(channel_id).prepend(stored);
@@ -562,6 +594,9 @@ impl Store {
             DiscordEvent::ImageLoaded { url, image } => {
                 self.image_cache.insert(url, image);
             }
+            DiscordEvent::ActionError { message } => {
+                self.last_error = Some(message);
+            }
         }
     }
 }
@@ -655,6 +690,7 @@ mod tests {
                 attachments: vec![],
                 is_edited: false,
                 reactions: vec![],
+                embeds: vec![],
             };
             store.get_or_create_message_buffer(channel_id).push(msg);
         }
@@ -672,6 +708,7 @@ mod tests {
                 attachments: vec![],
                 is_edited: false,
                 reactions: vec![],
+                embeds: vec![],
             })
             .collect();
         store

@@ -110,6 +110,9 @@ pub async fn run_action_handler(
                 }
                 if let Err(e) = req.await {
                     tracing::error!("failed to send message: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to send message".to_string(),
+                    });
                 }
             }
             Action::EditMessage {
@@ -123,6 +126,9 @@ pub async fn run_action_handler(
                     .await
                 {
                     tracing::error!("failed to edit message: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to edit message".to_string(),
+                    });
                 }
             }
             Action::DeleteMessage {
@@ -131,6 +137,9 @@ pub async fn run_action_handler(
             } => {
                 if let Err(e) = http.delete_message(channel_id, message_id).await {
                     tracing::error!("failed to delete message: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to delete message".to_string(),
+                    });
                 }
             }
             Action::FetchMessages {
@@ -155,9 +164,19 @@ pub async fn run_action_handler(
                                 messages,
                             });
                         }
-                        Err(e) => tracing::error!("failed to deserialize messages: {e}"),
+                        Err(e) => {
+                            tracing::error!("failed to deserialize messages: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to fetch messages".to_string(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::error!("failed to fetch messages: {e}"),
+                    Err(e) => {
+                        tracing::error!("failed to fetch messages: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to fetch messages".to_string(),
+                        });
+                    }
                 }
             }
             Action::FetchGuildChannels { guild_id } => {
@@ -169,9 +188,19 @@ pub async fn run_action_handler(
                                 channels,
                             });
                         }
-                        Err(e) => tracing::error!("failed to deserialize channels: {e}"),
+                        Err(e) => {
+                            tracing::error!("failed to deserialize channels: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to load channels".to_string(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::error!("failed to fetch channels: {e}"),
+                    Err(e) => {
+                        tracing::error!("failed to fetch channels: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to load channels".to_string(),
+                        });
+                    }
                 }
             }
             Action::AddReaction {
@@ -182,6 +211,9 @@ pub async fn run_action_handler(
                 let reaction = RequestReactionType::Unicode { name: &emoji };
                 if let Err(e) = http.create_reaction(channel_id, message_id, &reaction).await {
                     tracing::error!("failed to add reaction: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to add reaction".to_string(),
+                    });
                 }
             }
             Action::RemoveReaction {
@@ -195,6 +227,9 @@ pub async fn run_action_handler(
                     .await
                 {
                     tracing::error!("failed to remove reaction: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to remove reaction".to_string(),
+                    });
                 }
             }
             Action::SearchMessages { scope, query } => {
@@ -222,9 +257,19 @@ pub async fn run_action_handler(
                                 messages,
                             });
                         }
-                        Err(e) => tracing::error!("failed to load messages for search nav: {e}"),
+                        Err(e) => {
+                            tracing::error!("failed to load messages for search nav: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to fetch messages".to_string(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::error!("failed to fetch channel for search nav: {e}"),
+                    Err(e) => {
+                        tracing::error!("failed to fetch channel for search nav: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to fetch messages".to_string(),
+                        });
+                    }
                 }
             }
             Action::OpenThread { .. } => {
@@ -242,9 +287,19 @@ pub async fn run_action_handler(
                                 members,
                             });
                         }
-                        Err(e) => tracing::error!("failed to deserialize members: {e}"),
+                        Err(e) => {
+                            tracing::error!("failed to deserialize members: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to load members".to_string(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::error!("failed to fetch members: {e}"),
+                    Err(e) => {
+                        tracing::error!("failed to fetch members: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to load members".to_string(),
+                        });
+                    }
                 }
             }
             Action::FetchPinnedMessages { channel_id } => {
@@ -304,6 +359,7 @@ pub async fn run_action_handler(
                                                 }
                                             })
                                             .collect(),
+                                        embeds: vec![],
                                     }
                                 })
                                 .collect();
@@ -312,19 +368,35 @@ pub async fn run_action_handler(
                                 messages: stored,
                             });
                         }
-                        Err(e) => tracing::error!("failed to deserialize pinned messages: {e}"),
+                        Err(e) => {
+                            tracing::error!("failed to deserialize pinned messages: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to fetch pinned messages".to_string(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::error!("failed to fetch pinned messages: {e}"),
+                    Err(e) => {
+                        tracing::error!("failed to fetch pinned messages: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to fetch pinned messages".to_string(),
+                        });
+                    }
                 }
             }
             Action::PinMessage { channel_id, message_id } => {
                 if let Err(e) = http.create_pin(channel_id, message_id).await {
                     tracing::error!("failed to pin message: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to pin message".to_string(),
+                    });
                 }
             }
             Action::UnpinMessage { channel_id, message_id } => {
                 if let Err(e) = http.delete_pin(channel_id, message_id).await {
                     tracing::error!("failed to unpin message: {e}");
+                    let _ = event_tx.send(DiscordEvent::ActionError {
+                        message: "Failed to unpin message".to_string(),
+                    });
                 }
             }
             Action::FetchUserProfile { user_id } => {
@@ -339,9 +411,19 @@ pub async fn run_action_handler(
                             };
                             let _ = event_tx.send(DiscordEvent::UserProfileLoaded { profile });
                         }
-                        Err(e) => tracing::error!("failed to deserialize user profile: {e}"),
+                        Err(e) => {
+                            tracing::error!("failed to deserialize user profile: {e}");
+                            let _ = event_tx.send(DiscordEvent::ActionError {
+                                message: "Failed to load user profile".to_string(),
+                            });
+                        }
                     },
-                    Err(e) => tracing::error!("failed to fetch user profile: {e}"),
+                    Err(e) => {
+                        tracing::error!("failed to fetch user profile: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: "Failed to load user profile".to_string(),
+                        });
+                    }
                 }
             }
             Action::FetchDmChannels => {
@@ -351,10 +433,32 @@ pub async fn run_action_handler(
                 tracing::debug!("FetchDmChannels: DMs loaded from Ready payload");
             }
             Action::FetchImage { url, channel_id: _, message_id: _ } => {
-                // TODO: Fetch the image bytes via HTTP, encode using the terminal graphics
-                // protocol (Kitty or Sixel), and emit ImageLoaded. Requires the 'image'
-                // and 'base64' crates which are not yet added to Cargo.toml.
-                tracing::debug!("FetchImage stub called for url={url}");
+                let client = reqwest::Client::new();
+                match client.get(&url).send().await {
+                    Ok(response) => match response.bytes().await {
+                        Ok(bytes) => {
+                            match crate::tui::image_renderer::encode_image(
+                                &bytes,
+                                crate::tui::terminal_caps::GraphicsProtocol::Kitty,
+                                40, // default max width in columns
+                            ) {
+                                Ok((data, w, h)) => {
+                                    let _ = event_tx.send(DiscordEvent::ImageLoaded {
+                                        url,
+                                        image: crate::store::images::CachedImage {
+                                            protocol_data: data,
+                                            width: w,
+                                            height: h,
+                                        },
+                                    });
+                                }
+                                Err(e) => tracing::debug!("image encode failed: {e}"),
+                            }
+                        }
+                        Err(e) => tracing::error!("failed to download image bytes: {e}"),
+                    },
+                    Err(e) => tracing::error!("failed to fetch image: {e}"),
+                }
             }
         }
     }

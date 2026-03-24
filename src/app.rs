@@ -78,9 +78,15 @@ impl App {
 
         loop {
             // Drain pending discord events
-            while let Ok(event) = self.discord_event_rx.try_recv() {
+            {
                 let mut store = self.store.write().unwrap();
-                store.process_discord_event(event);
+                while let Ok(event) = self.discord_event_rx.try_recv() {
+                    store.process_discord_event(event);
+                }
+                // Promote any API error surfaced by the action handler.
+                if let Some(msg) = store.last_error.take() {
+                    self.error_message = Some((msg, Instant::now()));
+                }
             }
 
             // Auto-clear error messages older than 5 seconds.
