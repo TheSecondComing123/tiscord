@@ -58,6 +58,14 @@ impl MessageInput {
         self.cursor_pos += 1;
     }
 
+    /// Insert an arbitrary string at the current cursor position.
+    /// The cursor is advanced past the inserted text.
+    pub fn insert_text(&mut self, text: &str) {
+        let byte_pos = self.char_to_byte(self.cursor_pos);
+        self.content.insert_str(byte_pos, text);
+        self.cursor_pos += text.chars().count();
+    }
+
     /// Delete the character before the cursor (Backspace).
     fn delete_before(&mut self) {
         if self.cursor_pos == 0 {
@@ -643,6 +651,44 @@ mod tests {
         input.cursor_pos = 5; // after "hello", before spaces
         input.move_word_right();
         assert_eq!(input.cursor_pos, 13); // end of "world"
+    }
+
+    // --- insert_text ---
+
+    #[test]
+    fn test_insert_text_at_end() {
+        let mut input = MessageInput::new();
+        input.content = "hello".to_string();
+        input.cursor_pos = 5;
+        input.insert_text(" world");
+        assert_eq!(input.content, "hello world");
+        assert_eq!(input.cursor_pos, 11);
+    }
+
+    #[test]
+    fn test_insert_text_in_middle() {
+        let mut input = MessageInput::new();
+        input.content = "helloworld".to_string();
+        input.cursor_pos = 5;
+        input.insert_text(" pasted ");
+        assert_eq!(input.content, "hello pasted world");
+        assert_eq!(input.cursor_pos, 13);
+    }
+
+    #[test]
+    fn test_insert_text_with_newlines() {
+        let mut input = MessageInput::new();
+        input.insert_text("line1\nline2");
+        assert_eq!(input.content, "line1\nline2");
+        assert_eq!(input.cursor_pos, 11);
+    }
+
+    #[test]
+    fn test_insert_text_unicode() {
+        let mut input = MessageInput::new();
+        input.insert_text("こんにちは");
+        assert_eq!(input.content, "こんにちは");
+        assert_eq!(input.cursor_pos, 5);
     }
 
     // --- set_content ---

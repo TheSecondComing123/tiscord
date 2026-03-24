@@ -213,6 +213,9 @@ impl App {
                     Event::Mouse(mouse) => {
                         self.handle_mouse(mouse);
                     }
+                    Event::Paste(text) => {
+                        self.handle_paste(text);
+                    }
                     _ => {}
                 }
             }
@@ -486,6 +489,14 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn handle_paste(&mut self, text: String) {
+        let store = self.store.read().unwrap();
+        if store.ui.focus == FocusTarget::MessageInput {
+            drop(store);
+            self.message_pane.message_input.insert_text(&text);
+        }
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) {
