@@ -56,6 +56,16 @@ impl TypingState {
     pub fn has_typers(&self, channel_id: Id<ChannelMarker>) -> bool {
         !self.get_typers(channel_id).is_empty()
     }
+
+    /// Remove all expired typing entries from the map, freeing memory.
+    /// Should be called periodically (e.g. every few seconds) from the event loop.
+    pub fn cleanup(&mut self) {
+        let cutoff = Duration::from_secs(TYPING_EXPIRE_SECS);
+        self.channels.retain(|_, users| {
+            users.retain(|u| u.started_at.elapsed() < cutoff);
+            !users.is_empty()
+        });
+    }
 }
 
 #[cfg(test)]
@@ -160,5 +170,51 @@ mod tests {
 
         // Should still be present with a fresh timestamp
         assert!(state.has_typers(ch(1)));
+    }
+
+    #[test]
+    fn test_cleanup_removes_expired_entries() {
+        let mut state = TypingState::default();
+        state.add_typing(ch(1), usr(10), "alice".to_string());
+        state.add_typing(ch(2), usr(11), "bob".to_string());
+
+        // Expire alice's entry
+        let users = state.channels.get_mut(&ch(1)).unwrap();
+        users[0].started_at =
+            Instant::now() - Duration::from_secs(TYPING_EXPIRE_SECS + 1);
+
+        state.cleanup();
+
+        // Channel 1 should be removed entirely (no active typers)
+        assert!(!state.channels.contains_key(&ch(1)));
+        // Channel 2 still has an active typer
+        assert!(state.channels.contains_key(&ch(2)));
+    }
+
+    #[test]
+    fn test_cleanup_removes_expired_user_but_keeps_channel() {
+        let mut state = TypingState::default();
+        state.add_typing(ch(1), usr(10), "alice".to_string());
+        state.add_typing(ch(1), usr(11), "bob".to_string());
+
+        // Expire only alice
+        let users = state.channels.get_mut(&ch(1)).unwrap();
+        users[0].started_at =
+            Instant::now() - Duration::from_secs(TYPING_EXPIRE_SECS + 1);
+
+        state.cleanup();
+
+        // Channel still exists because bob is still typing
+        assert!(state.channels.contains_key(&ch(1)));
+        let remaining = &state.channels[&ch(1)];
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].user_id, usr(11));
+    }
+
+    #[test]
+    fn test_cleanup_empty_state_does_nothing() {
+        let mut state = TypingState::default();
+        state.cleanup(); // Should not panic on empty state
+        assert!(state.channels.is_empty());
     }
 }
