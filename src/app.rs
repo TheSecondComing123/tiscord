@@ -102,6 +102,7 @@ impl App {
                 let sidebar_width = self.config.ui.layout.sidebar_width;
                 let member_width = self.config.ui.layout.member_width;
                 let member_visible = store.ui.member_sidebar_visible;
+                let is_connecting = store.ui.connection_status == ConnectionStatus::Connecting;
 
                 let sidebar_ref = &self.sidebar;
                 let message_pane_ref = &self.message_pane;
@@ -126,6 +127,16 @@ impl App {
                     let main_area = rows[0];
                     let status_area = rows[1];
 
+                    if is_connecting {
+                        // Show a centered "Connecting to Discord..." splash instead of
+                        // the normal layout while the gateway handshake is in progress.
+                        frame.render_widget(
+                            Paragraph::new("Connecting to Discord...")
+                                .style(Style::default().fg(theme::TEXT_MUTED).bg(theme::BG))
+                                .alignment(Alignment::Center),
+                            main_area,
+                        );
+                    } else {
                     // Build horizontal layout constraints for the main area.
                     let constraints: Vec<Constraint> = if member_visible {
                         vec![
@@ -158,6 +169,7 @@ impl App {
                     if member_visible && columns.len() > 2 {
                         member_sidebar_ref.render(frame, columns[2], &store);
                     }
+                    } // end else (not connecting)
 
                     // Status bar
                     render_status_bar(frame, status_area, &store, error_ref);
