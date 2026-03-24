@@ -368,6 +368,9 @@ impl App {
 
         // Route to the focused component
         let mut store = self.store.write().unwrap();
+        // Remember which channel was active before handling the key so we can
+        // save/restore drafts when the user navigates to a different channel.
+        let prev_channel = store.ui.selected_channel;
         let result = match store.ui.focus {
             FocusTarget::ServerList | FocusTarget::ChannelTree => {
                 self.sidebar.handle_key_event(key, &mut store)?
@@ -386,6 +389,18 @@ impl App {
                 None
             }
         };
+
+        // If the selected channel changed (e.g. user navigated in the channel tree),
+        // save the draft for the old channel and restore any draft for the new one.
+        let new_channel = store.ui.selected_channel;
+        if new_channel != prev_channel {
+            if let Some(old_id) = prev_channel {
+                self.message_pane.message_input.save_draft(old_id);
+            }
+            if let Some(new_id) = new_channel {
+                self.message_pane.message_input.load_draft(new_id);
+            }
+        }
 
         // Handle cross-component actions returned by components
         if let Some(action) = result {

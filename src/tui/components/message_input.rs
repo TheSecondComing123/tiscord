@@ -1,15 +1,20 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use twilight_model::id::Id;
+use twilight_model::id::marker::ChannelMarker;
 
 use crate::discord::actions::Action;
 use crate::store::Store;
 use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
-use crate::tui::emoji_data::emoji_by_name;
+use crate::tui::emoji_data::{EMOJI_DATA, emoji_by_name};
 use crate::tui::theme;
 
 /// Discord typing indicators should not be sent more than once per 10 seconds.
@@ -59,6 +64,8 @@ pub struct MessageInput {
     pub file_upload_mode: bool,
     /// Buffer for the file path being typed during file-upload mode.
     file_path_buffer: String,
+    /// Per-channel draft text saved when the user switches away from a channel.
+    drafts: HashMap<Id<ChannelMarker>, String>,
 }
 
 impl MessageInput {
@@ -69,6 +76,7 @@ impl MessageInput {
             last_typing_sent: None,
             file_upload_mode: false,
             file_path_buffer: String::new(),
+            drafts: HashMap::new(),
         }
     }
 
@@ -82,6 +90,24 @@ impl MessageInput {
     pub fn clear(&mut self) {
         self.content.clear();
         self.cursor_pos = 0;
+    }
+
+    /// Save the current content as a draft for `channel_id`.
+    /// If the input is empty the draft entry is removed.
+    pub fn save_draft(&mut self, channel_id: Id<ChannelMarker>) {
+        if self.content.is_empty() {
+            self.drafts.remove(&channel_id);
+        } else {
+            self.drafts.insert(channel_id, self.content.clone());
+        }
+    }
+
+    /// Restore the draft for `channel_id`, or clear the input if none exists.
+    pub fn load_draft(&mut self, channel_id: Id<ChannelMarker>) {
+        match self.drafts.get(&channel_id).cloned() {
+            Some(draft) => self.set_content(draft),
+            None => self.clear(),
+        }
     }
 
     // --- helpers ---
@@ -184,6 +210,49 @@ impl MessageInput {
 impl Component for MessageInput {
     fn handle_key_event(&mut self, key: KeyEvent, store: &mut Store) -> Result<Option<Action>> {
         if store.ui.focus != FocusTarget::MessageInput {
+            return Ok(None);
+        }
+
+        // --- File upload mode (Ctrl+U activates; Enter submits; Esc cancels) ---
+        if self.file_upload_mode {
+            match key.code {
+                KeyCode::Esc => {
+                    self.file_upload_mode = false;
+                    self.file_path_buffer.clear();
+                }
+                KeyCode::Enter => {
+                    let file_path = self.file_path_buffer.trim().to_string();
+                    self.file_upload_mode = false;
+                    self.file_path_buffer.clear();
+                    if !file_path.is_empty() {
+                        if let Some(channel_id) = store.ui.selected_channel {
+                            store.uploading_file = true;
+                            return Ok(Some(Action::UploadFile {
+                                channel_id,
+                                file_path,
+                                message: None,
+                            }));
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.file_path_buffer.pop();
+                }
+                KeyCode::Char(ch)
+                    if key.modifiers == KeyModifiers::NONE
+                        || key.modifiers == KeyModifiers::SHIFT =>
+                {
+                    self.file_path_buffer.push(ch);
+                }
+                _ => {}
+            }
+            return Ok(None);
+        }
+
+        // Ctrl+U -> enter file upload mode
+        if key.code == KeyCode::Char('u') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.file_upload_mode = true;
+            self.file_path_buffer.clear();
             return Ok(None);
         }
 
