@@ -160,14 +160,25 @@ impl Store {
                             position: ch.position,
                         })
                         .collect();
-                    tracing::debug!("guild {} has {} channels from Ready", rg.name, channels.len());
+                    tracing::debug!("guild {} has {} channels, {} members from Ready", rg.name, channels.len(), rg.members.len());
+                    let guild_id = rg.id;
                     let info = guilds::GuildInfo {
-                        id: rg.id,
+                        id: guild_id,
                         name: rg.name,
                         icon: None,
                         channels,
                     };
                     self.guilds.add_guild(info);
+                    // Populate members from Ready data
+                    if !rg.members.is_empty() {
+                        let infos: Vec<MemberInfo> = rg.members.into_iter().map(|m| MemberInfo {
+                            id: m.user_id,
+                            name: m.nickname.unwrap_or(m.username),
+                            status: MemberStatus::Unknown,
+                            custom_status: None,
+                        }).collect();
+                        self.members.insert(guild_id, infos);
+                    }
                 }
                 // Store guild folders
                 self.guild_folders = folders;
@@ -208,7 +219,14 @@ impl Store {
                     channels,
                 };
                 self.guilds.add_guild(info);
-                tracing::debug!("guild create: {}", guild.name);
+                // Extract members from GuildCreate
+                if !guild.members.is_empty() {
+                    let infos = members_to_infos(guild.members.clone());
+                    tracing::debug!("guild create: {} ({} members)", guild.name, infos.len());
+                    self.members.insert(guild.id, infos);
+                } else {
+                    tracing::debug!("guild create: {}", guild.name);
+                }
             }
             DiscordEvent::GuildDelete(guild_id) => {
                 self.guilds.remove_guild(guild_id);
