@@ -99,8 +99,8 @@ impl App {
             // Render
             {
                 let store = self.store.read().unwrap();
-                let sidebar_width = self.config.ui.layout.sidebar_width;
-                let member_width = self.config.ui.layout.member_width;
+                let cfg_sidebar_width = self.config.ui.layout.sidebar_width;
+                let cfg_member_width = self.config.ui.layout.member_width;
                 let member_visible = store.ui.member_sidebar_visible;
                 let is_connecting = store.ui.connection_status == ConnectionStatus::Connecting;
 
@@ -116,6 +116,9 @@ impl App {
 
                 terminal.draw(|frame| {
                     let area = frame.area();
+                    // Scale sidebar widths to terminal size (~20% left, ~15% right)
+                    let sidebar_width = cfg_sidebar_width.max(area.width / 5);
+                    let member_width = cfg_member_width.max(area.width / 6);
 
                     // Split vertically: main content above, 1-line status bar below.
                     let rows = Layout::vertical([

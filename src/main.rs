@@ -58,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     // Create store and app
     let mut initial_store = store::Store::new();
     initial_store.supports_images = terminal_caps.supports_images();
+    initial_store.ui.member_sidebar_visible = config.ui.member_sidebar;
     let store = std::sync::Arc::new(std::sync::RwLock::new(initial_store));
     let mut app = app::App::new(store, action_tx, discord_event_rx, config, terminal_caps);
 

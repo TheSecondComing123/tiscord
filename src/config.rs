@@ -43,8 +43,8 @@ pub struct UiLayout {
 impl Default for UiLayout {
     fn default() -> Self {
         UiLayout {
-            sidebar_width: 20,
-            member_width: 20,
+            sidebar_width: 28,
+            member_width: 24,
         }
     }
 }
@@ -163,8 +163,8 @@ mod tests {
         assert_eq!(config.ui.fps, 30);
         assert_eq!(config.ui.timestamps, TimestampMode::Relative);
         assert!(config.ui.member_sidebar);
-        assert_eq!(config.ui.layout.sidebar_width, 20);
-        assert_eq!(config.ui.layout.member_width, 20);
+        assert_eq!(config.ui.layout.sidebar_width, 28);
+        assert_eq!(config.ui.layout.member_width, 24);
 
         assert!(!config.notifications.desktop);
         assert!(!config.notifications.mentions_only);
@@ -182,8 +182,8 @@ fps = 60
         // Missing fields fall back to defaults
         assert_eq!(config.ui.timestamps, TimestampMode::Relative);
         assert!(config.ui.member_sidebar);
-        assert_eq!(config.ui.layout.sidebar_width, 20);
-        assert_eq!(config.ui.layout.member_width, 20);
+        assert_eq!(config.ui.layout.sidebar_width, 28);
+        assert_eq!(config.ui.layout.member_width, 24);
         assert!(!config.notifications.desktop);
         assert!(!config.notifications.mentions_only);
     }
