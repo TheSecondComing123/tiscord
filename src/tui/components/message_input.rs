@@ -9,10 +9,44 @@ use crate::discord::actions::Action;
 use crate::store::Store;
 use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
+use crate::tui::emoji_data::emoji_by_name;
 use crate::tui::theme;
 
 /// Discord typing indicators should not be sent more than once per 10 seconds.
 const TYPING_THROTTLE: Duration = Duration::from_secs(10);
+
+/// Replace all `:name:` shortcodes in `content` with their Unicode emoji equivalents.
+/// Shortcodes with no match are left as-is.
+pub fn expand_emoji_shortcodes(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let bytes = content.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == b':' {
+            // Look for the closing colon.
+            if let Some(end) = content[i + 1..].find(':') {
+                let name = &content[i + 1..i + 1 + end];
+                // Only treat it as a shortcode if the name is non-empty and
+                // contains only word characters (letters, digits, underscore).
+                if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    if let Some(emoji) = emoji_by_name(name) {
+                        result.push_str(emoji);
+                        i += 1 + end + 1; // skip past the closing ':'
+                        continue;
+                    }
+                }
+            }
+        }
+        // No shortcode match — emit the character as-is.
+        let ch = content[i..].chars().next().unwrap();
+        result.push(ch);
+        i += ch.len_utf8();
+    }
+
+    result
+}
 
 pub struct MessageInput {
     /// Content of the input buffer.
@@ -21,6 +55,10 @@ pub struct MessageInput {
     cursor_pos: usize,
     /// Timestamp of when we last sent a typing indicator for the current channel.
     last_typing_sent: Option<Instant>,
+    /// Whether we are in file-upload path-entry mode (triggered by Ctrl+U).
+    pub file_upload_mode: bool,
+    /// Buffer for the file path being typed during file-upload mode.
+    file_path_buffer: String,
 }
 
 impl MessageInput {
@@ -29,6 +67,8 @@ impl MessageInput {
             content: String::new(),
             cursor_pos: 0,
             last_typing_sent: None,
+            file_upload_mode: false,
+            file_path_buffer: String::new(),
         }
     }
 
@@ -222,7 +262,7 @@ impl Component for MessageInput {
                     return Ok(None);
                 }
 
-                let content = self.content.clone();
+                let content = expand_emoji_shortcodes(&self.content);
 
                 if let Some(message_id) = store.ui.editing_message {
                     let channel_id = match store.ui.selected_channel {
@@ -708,6 +748,56 @@ mod tests {
         input.insert_text("こんにちは");
         assert_eq!(input.content, "こんにちは");
         assert_eq!(input.cursor_pos, 5);
+    }
+
+    // --- expand_emoji_shortcodes ---
+
+    #[test]
+    fn test_expand_known_shortcode() {
+        assert_eq!(expand_emoji_shortcodes(":thumbsup:"), "👍");
+    }
+
+    #[test]
+    fn test_expand_shortcode_in_sentence() {
+        assert_eq!(
+            expand_emoji_shortcodes("great job :thumbsup: nice"),
+            "great job 👍 nice"
+        );
+    }
+
+    #[test]
+    fn test_expand_multiple_shortcodes() {
+        assert_eq!(
+            expand_emoji_shortcodes(":fire: :heart:"),
+            "🔥 ❤️"
+        );
+    }
+
+    #[test]
+    fn test_unknown_shortcode_left_as_is() {
+        assert_eq!(expand_emoji_shortcodes(":notanemoji:"), ":notanemoji:");
+    }
+
+    #[test]
+    fn test_empty_colon_pair_left_as_is() {
+        assert_eq!(expand_emoji_shortcodes("::"), "::");
+    }
+
+    #[test]
+    fn test_plain_text_unchanged() {
+        assert_eq!(expand_emoji_shortcodes("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_colons_without_closing_left_as_is() {
+        assert_eq!(expand_emoji_shortcodes("hello :world"), "hello :world");
+    }
+
+    #[test]
+    fn test_expand_shortcode_with_underscore() {
+        assert_eq!(expand_emoji_shortcodes(":thumbs_up:"), ":thumbs_up:");
+        // thumbsup (no underscore) is the valid key
+        assert_eq!(expand_emoji_shortcodes(":ok_hand:"), "👌");
     }
 
     // --- set_content ---

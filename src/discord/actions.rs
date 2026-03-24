@@ -91,6 +91,12 @@ pub enum Action {
     SendTyping {
         channel_id: Id<ChannelMarker>,
     },
+    /// Upload a file to a Discord channel with an optional text message.
+    UploadFile {
+        channel_id: Id<ChannelMarker>,
+        file_path: String,
+        message: Option<String>,
+    },
     /// Internal action used by components to request cross-component coordination.
     /// Intercepted by App before reaching the action handler.
     ComponentKeyAction(KeyAction),
@@ -433,6 +439,49 @@ pub async fn run_action_handler(
             Action::SendTyping { channel_id } => {
                 if let Err(e) = http.create_typing_trigger(channel_id).await {
                     tracing::debug!("failed to send typing trigger: {e}");
+                }
+            }
+            Action::UploadFile {
+                channel_id,
+                file_path,
+                message,
+            } => {
+                match std::fs::read(&file_path) {
+                    Ok(file_bytes) => {
+                        let filename = std::path::Path::new(&file_path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "file".to_string());
+                        let attachment =
+                            twilight_model::http::attachment::Attachment::from_bytes(
+                                filename,
+                                file_bytes,
+                                1,
+                            );
+                        let attachments = [attachment];
+                        let mut req = http.create_message(channel_id).attachments(&attachments);
+                        if let Some(ref text) = message {
+                            req = req.content(text);
+                        }
+                        match req.await {
+                            Ok(_) => {
+                                tracing::info!("file uploaded: {file_path}");
+                                let _ = event_tx.send(DiscordEvent::FileUploaded { channel_id });
+                            }
+                            Err(e) => {
+                                tracing::error!("failed to upload file: {e}");
+                                let _ = event_tx.send(DiscordEvent::ActionError {
+                                    message: format!("Failed to upload file: {e}"),
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to read file {file_path}: {e}");
+                        let _ = event_tx.send(DiscordEvent::ActionError {
+                            message: format!("Cannot read file: {e}"),
+                        });
+                    }
                 }
             }
             Action::FetchDmChannels => {
