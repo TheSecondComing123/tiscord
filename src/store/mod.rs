@@ -67,6 +67,27 @@ pub struct NotificationInfo {
     pub content: String,
 }
 
+/// The kind of a relationship between the current user and another user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationshipKind {
+    /// Mutual friend (type 1 in Discord's API).
+    Friend,
+    /// Blocked user (type 2 in Discord's API).
+    Blocked,
+    /// Incoming friend request (type 3 in Discord's API).
+    PendingIncoming,
+    /// Outgoing friend request (type 4 in Discord's API).
+    PendingOutgoing,
+}
+
+/// A relationship between the current user and another user.
+#[derive(Debug, Clone)]
+pub struct Relationship {
+    pub user_id: Id<UserMarker>,
+    pub username: String,
+    pub kind: RelationshipKind,
+}
+
 pub struct Store {
     pub guilds: guilds::GuildState,
     pub guild_folders: Vec<GuildFolder>,
@@ -102,6 +123,8 @@ pub struct Store {
     pub muted_channels: HashSet<Id<ChannelMarker>>,
     /// Guilds the user has locally muted. All channels in a muted guild are treated as muted.
     pub muted_guilds: HashSet<Id<GuildMarker>>,
+    /// Friend/blocked/pending relationships for the current user, parsed from the Ready payload.
+    pub relationships: Vec<Relationship>,
 }
 
 impl Store {
@@ -130,6 +153,7 @@ impl Store {
             pending_notification: None,
             muted_channels: HashSet::new(),
             muted_guilds: HashSet::new(),
+            relationships: Vec::new(),
         }
     }
 
@@ -175,12 +199,17 @@ impl Store {
                 guilds: ready_guilds,
                 guild_folders: folders,
                 dm_channels: ready_dms,
+                relationships: ready_relationships,
                 ..
             } => {
                 self.current_user_id = Some(user_id);
                 self.current_user_name = Some(username.clone());
                 self.ui.connection_status = state::ConnectionStatus::Connected;
-                tracing::info!("ready as {} ({} guilds, {} DMs)", username, ready_guilds.len(), ready_dms.len());
+                self.relationships = ready_relationships;
+                tracing::info!(
+                    "ready as {} ({} guilds, {} DMs, {} relationships)",
+                    username, ready_guilds.len(), ready_dms.len(), self.relationships.len()
+                );
                 // Create guilds from Ready data, including channels if present
                 for rg in ready_guilds {
                     // Discord channel types: 0=Text, 2=Voice, 4=Category, 5=Announcement, 15=Forum
@@ -424,6 +453,19 @@ impl Store {
                         name: s.name.clone(),
                         format: format!("{:?}", s.format_type),
                     }).collect(),
+                    poll: msg.poll.as_ref().map(|p| {
+                        let answer_counts: std::collections::HashMap<u8, u64> = p.results
+                            .as_ref()
+                            .map(|r| r.answer_counts.iter().map(|ac| (ac.id, ac.count)).collect())
+                            .unwrap_or_default();
+                        messages::PollInfo {
+                            question: p.question.text.clone().unwrap_or_default(),
+                            answers: p.answers.iter().map(|a| messages::PollAnswer {
+                                text: a.poll_media.text.clone().unwrap_or_default(),
+                                count: *answer_counts.get(&a.answer_id).unwrap_or(&0) as u32,
+                            }).collect(),
+                        }
+                    }),
                 };
                 self.get_or_create_message_buffer(channel_id).push(stored);
             }
@@ -536,6 +578,19 @@ impl Store {
                             name: s.name.clone(),
                             format: format!("{:?}", s.format_type),
                         }).collect(),
+                        poll: msg.poll.as_ref().map(|p| {
+                            let answer_counts: std::collections::HashMap<u8, u64> = p.results
+                                .as_ref()
+                                .map(|r| r.answer_counts.iter().map(|ac| (ac.id, ac.count)).collect())
+                                .unwrap_or_default();
+                            messages::PollInfo {
+                                question: p.question.text.clone().unwrap_or_default(),
+                                answers: p.answers.iter().map(|a| messages::PollAnswer {
+                                    text: a.poll_media.text.clone().unwrap_or_default(),
+                                    count: *answer_counts.get(&a.answer_id).unwrap_or(&0) as u32,
+                                }).collect(),
+                            }
+                        }),
                     })
                     .collect();
                 self.get_or_create_message_buffer(channel_id).prepend(stored);
@@ -805,6 +860,7 @@ mod tests {
                 reactions: vec![],
                 embeds: vec![],
                 stickers: vec![],
+                poll: None,
             };
             store.get_or_create_message_buffer(channel_id).push(msg);
         }
@@ -824,6 +880,7 @@ mod tests {
                 reactions: vec![],
                 embeds: vec![],
                 stickers: vec![],
+                poll: None,
             })
             .collect();
         store

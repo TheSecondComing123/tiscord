@@ -4,7 +4,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem};
 
 use crate::discord::actions::Action;
-use crate::store::Store;
+use crate::store::{RelationshipKind, Store};
 use crate::store::state::FocusTarget;
 use crate::tui::component::Component;
 use crate::tui::theme;
@@ -137,7 +137,47 @@ impl Component for DMList {
             })
             .collect();
 
-        let list = List::new(items).block(block);
+        let mut all_items = items;
+
+        // Show friends list below DMs if there are any
+        let friends: Vec<_> = store
+            .relationships
+            .iter()
+            .filter(|r| r.kind == RelationshipKind::Friend)
+            .collect();
+        let pending: Vec<_> = store
+            .relationships
+            .iter()
+            .filter(|r| r.kind == RelationshipKind::PendingIncoming)
+            .collect();
+
+        if !friends.is_empty() || !pending.is_empty() {
+            // Section header
+            all_items.push(ListItem::new(Line::from(Span::styled(
+                "FRIENDS",
+                Style::default().fg(theme::TEXT_MUTED),
+            ))));
+            for friend in &friends {
+                all_items.push(ListItem::new(Line::from(vec![
+                    Span::styled("● ", Style::default().fg(theme::ONLINE)),
+                    Span::styled(friend.username.clone(), theme::secondary_text()),
+                ])));
+            }
+            if !pending.is_empty() {
+                all_items.push(ListItem::new(Line::from(Span::styled(
+                    format!("PENDING ({})", pending.len()),
+                    Style::default().fg(theme::TEXT_MUTED),
+                ))));
+                for p in &pending {
+                    all_items.push(ListItem::new(Line::from(vec![
+                        Span::styled("◌ ", Style::default().fg(theme::IDLE)),
+                        Span::styled(p.username.clone(), theme::muted()),
+                    ])));
+                }
+            }
+        }
+
+        let list = List::new(all_items).block(block);
         frame.render_widget(list, area);
     }
 }

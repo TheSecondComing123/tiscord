@@ -48,6 +48,8 @@ pub enum DiscordEvent {
         dm_channels: Vec<(Id<ChannelMarker>, Vec<String>)>,
         session_id: String,
         resume_url: String,
+        /// Friend/blocked/pending relationships parsed from the Ready payload.
+        relationships: Vec<crate::store::Relationship>,
     },
     ReactionAdd {
         channel_id: Id<ChannelMarker>,
@@ -106,6 +108,11 @@ pub enum DiscordEvent {
     },
     ThreadListSync {
         guild_id: twilight_model::id::Id<GuildMarker>,
+        threads: Vec<crate::store::ThreadInfo>,
+    },
+    /// REST response: active threads for a forum channel were fetched.
+    ForumThreadsLoaded {
+        channel_id: Id<ChannelMarker>,
         threads: Vec<crate::store::ThreadInfo>,
     },
     /// REST response: a user profile was fetched and is ready to cache.

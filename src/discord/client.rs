@@ -205,6 +205,43 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         .unwrap_or_default();
     tracing::info!("parsed {} DM channels from Ready", dm_channels.len());
 
+    // Parse relationships (friends, blocked, pending)
+    let relationships: Vec<crate::store::Relationship> = d
+        .get("relationships")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|rel| {
+                    let rel_type = rel.get("type")?.as_u64()?;
+                    let kind = match rel_type {
+                        1 => crate::store::RelationshipKind::Friend,
+                        2 => crate::store::RelationshipKind::Blocked,
+                        3 => crate::store::RelationshipKind::PendingIncoming,
+                        4 => crate::store::RelationshipKind::PendingOutgoing,
+                        _ => return None,
+                    };
+                    // Relationships may have an `id` field (the other user's ID) and a `user` object
+                    let user_id_str = rel.get("id")?.as_str()?;
+                    let uid: u64 = user_id_str.parse().ok()?;
+                    let username = rel.get("user")
+                        .and_then(|u| {
+                            u.get("global_name")
+                                .and_then(|n| n.as_str())
+                                .or_else(|| u.get("username").and_then(|n| n.as_str()))
+                        })
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    Some(crate::store::Relationship {
+                        user_id: Id::new(uid),
+                        username,
+                        kind,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    tracing::info!("parsed {} relationships from Ready", relationships.len());
+
     let session_id = d.get("session_id")?.as_str()?.to_string();
     let resume_url = d
         .get("resume_gateway_url")
@@ -220,6 +257,7 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
         dm_channels,
         session_id,
         resume_url,
+        relationships,
     })
 }
 
