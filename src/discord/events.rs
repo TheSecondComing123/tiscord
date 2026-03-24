@@ -30,6 +30,7 @@ pub enum DiscordEvent {
     PresenceUpdate {
         user_id: Id<UserMarker>,
         guild_id: Id<GuildMarker>,
+        status: crate::store::MemberStatus,
         custom_status: Option<crate::store::CustomStatus>,
     },
     MemberChunk {
@@ -193,9 +194,17 @@ pub fn translate_event(event: Event) -> Option<DiscordEvent> {
                     emoji: a.emoji.as_ref().map(|em| em.name.clone()),
                     text: a.state.clone(),
                 });
+            let status = match e.status {
+                twilight_model::gateway::presence::Status::Online => crate::store::MemberStatus::Online,
+                twilight_model::gateway::presence::Status::Idle => crate::store::MemberStatus::Idle,
+                twilight_model::gateway::presence::Status::DoNotDisturb => crate::store::MemberStatus::Dnd,
+                twilight_model::gateway::presence::Status::Offline
+                | twilight_model::gateway::presence::Status::Invisible => crate::store::MemberStatus::Offline,
+            };
             Some(DiscordEvent::PresenceUpdate {
                 user_id: e.user.id(),
                 guild_id: e.guild_id,
+                status,
                 custom_status,
             })
         },

@@ -40,6 +40,8 @@ pub struct MemberInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberStatus {
     Online,
+    Idle,
+    Dnd,
     Offline,
     Unknown,
 }
@@ -515,9 +517,10 @@ impl Store {
                 };
                 self.typing.add_typing(channel_id, user_id, name);
             }
-            DiscordEvent::PresenceUpdate { user_id, guild_id, custom_status } => {
+            DiscordEvent::PresenceUpdate { user_id, guild_id, status, custom_status } => {
                 if let Some(members) = self.members.get_mut(&guild_id) {
                     if let Some(member) = members.iter_mut().find(|m| m.id == user_id) {
+                        member.status = status;
                         member.custom_status = custom_status;
                     }
                 }

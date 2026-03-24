@@ -18,10 +18,19 @@ pub fn render_message(msg: &StoredMessage, _width: u16) -> Vec<Line<'static>> {
 
 /// Like `render_message` but also accepts optional thread info to display a thread indicator
 /// and a flag indicating whether the terminal supports inline image rendering.
+///
+/// When `compact` is `true` the author/timestamp header is omitted — used when the same
+/// author sends consecutive messages within 5 minutes (grouped messages).
 pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Option<&ThreadInfo>, supports_images: bool) -> Vec<Line<'static>> {
+    render_message_full(msg, _width, thread, supports_images, false)
+}
+
+/// Full rendering function that accepts all parameters including `compact`.
+pub fn render_message_full(msg: &StoredMessage, _width: u16, thread: Option<&ThreadInfo>, supports_images: bool, compact: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // ── reply context ────────────────────────────────────────────────────────
+    // Always show reply context even in compact mode — it provides important reference.
     if let Some(reply) = &msg.reply_to {
         let quote = format!(
             "> replying to @{}: {}",
@@ -31,15 +40,18 @@ pub fn render_message_with_thread(msg: &StoredMessage, _width: u16, thread: Opti
     }
 
     // ── header: author  timestamp ────────────────────────────────────────────
-    let author_style = Style::default()
-        .fg(theme::ACCENT)
-        .add_modifier(Modifier::BOLD);
-    let timestamp_text = format!("  {}", format_timestamp(&msg.timestamp));
-    let header = Line::from(vec![
-        Span::styled(msg.author_name.clone(), author_style),
-        Span::styled(timestamp_text, theme::muted()),
-    ]);
-    lines.push(header);
+    // Skip the header in compact mode (same author, within 5 minutes).
+    if !compact {
+        let author_style = Style::default()
+            .fg(theme::ACCENT)
+            .add_modifier(Modifier::BOLD);
+        let timestamp_text = format!("  {}", format_timestamp(&msg.timestamp));
+        let header = Line::from(vec![
+            Span::styled(msg.author_name.clone(), author_style),
+            Span::styled(timestamp_text, theme::muted()),
+        ]);
+        lines.push(header);
+    }
 
     // ── content ──────────────────────────────────────────────────────────────
     let raw_lines: Vec<&str> = msg.content.split('\n').collect();

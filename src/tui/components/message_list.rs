@@ -11,7 +11,7 @@ use crate::store::Store;
 use crate::store::messages::StoredMessage;
 use crate::store::state::{FocusTarget, PaneView};
 use crate::tui::component::Component;
-use crate::tui::components::message::render_message_with_thread;
+use crate::tui::components::message::render_message_full;
 use crate::tui::keybindings::KeyAction;
 use crate::tui::theme;
 
@@ -334,6 +334,34 @@ impl Component for MessageList {
                 prev_date = Some(date);
             }
 
+            // Determine whether this message is compact (same author, within 5 minutes,
+            // no date boundary, no reply context).
+            let compact = if msg_idx == 0 || msg.reply_to.is_some() {
+                false
+            } else {
+                let prev = &messages[msg_idx - 1];
+                let same_author = prev.author_id == msg.author_id;
+                // Same date (no separator was just inserted) is implied when same_author
+                // is true and the timestamps are within 5 minutes.
+                let within_5_min = same_author && {
+                    use chrono::DateTime;
+                    let t_prev = DateTime::parse_from_rfc3339(&prev.timestamp).ok();
+                    let t_cur = DateTime::parse_from_rfc3339(&msg.timestamp).ok();
+                    match (t_prev, t_cur) {
+                        (Some(p), Some(c)) => {
+                            let diff = c.signed_duration_since(p).num_seconds().abs();
+                            diff <= 5 * 60
+                        }
+                        _ => false,
+                    }
+                };
+                // Also suppress compactness when a date separator was just emitted.
+                let date_boundary = cur_date
+                    .and_then(|d| message_date(&messages[msg_idx - 1].timestamp).map(|pd| pd != d))
+                    .unwrap_or(false);
+                same_author && within_5_min && !date_boundary
+            };
+
             // Look up a thread whose id matches the message id (Discord starter message convention)
             let thread_info = store
                 .ui
@@ -341,7 +369,7 @@ impl Component for MessageList {
                 .and_then(|cid| store.active_threads.get(&cid))
                 .and_then(|threads| threads.iter().find(|t| t.id.get() == msg.id.get()));
 
-            let rendered = render_message_with_thread(msg, msg_area.width, thread_info, store.supports_images);
+            let rendered = render_message_full(msg, msg_area.width, thread_info, store.supports_images, compact);
             let line_count = rendered.len();
             all_lines.extend(rendered);
             for _ in 0..line_count {

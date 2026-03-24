@@ -97,48 +97,30 @@ impl Component for MemberSidebar {
             }
         };
 
-        // Partition into online and offline groups.
+        // Partition into four groups in priority order.
         let online: Vec<_> = members.iter().filter(|m| m.status == MemberStatus::Online).collect();
-        let offline: Vec<_> = members.iter().filter(|m| m.status != MemberStatus::Online).collect();
+        let idle: Vec<_> = members.iter().filter(|m| m.status == MemberStatus::Idle).collect();
+        let dnd: Vec<_> = members.iter().filter(|m| m.status == MemberStatus::Dnd).collect();
+        let offline: Vec<_> = members.iter().filter(|m| matches!(m.status, MemberStatus::Offline | MemberStatus::Unknown)).collect();
 
         let mut lines: Vec<Line> = Vec::new();
 
-        // Online group
-        if !online.is_empty() {
-            let header = Line::from(Span::styled(
-                format!("ONLINE \u{2014} {}", online.len()),
-                Style::default().fg(theme::TEXT_MUTED),
-            ));
-            lines.push(header);
-            for member in &online {
-                let dot = Span::styled("\u{25CF} ", Style::default().fg(theme::ONLINE));
-                let name = Span::styled(member.name.as_str(), Style::default().fg(theme::TEXT_PRIMARY));
-                lines.push(Line::from(vec![dot, name]));
-                if let Some(cs) = &member.custom_status {
-                    let status_text = match (&cs.emoji, &cs.text) {
-                        (Some(e), Some(t)) => format!("  {} {}", e, t),
-                        (Some(e), None) => format!("  {}", e),
-                        (None, Some(t)) => format!("  {}", t),
-                        (None, None) => continue,
-                    };
-                    lines.push(Line::from(Span::styled(status_text, theme::muted())));
-                }
+        for (group, header, dot_color, name_color) in [
+            (online, format!("ONLINE \u{2014} {}", members.iter().filter(|m| m.status == MemberStatus::Online).count()), theme::ONLINE, theme::TEXT_PRIMARY),
+            (idle,   format!("IDLE \u{2014} {}", members.iter().filter(|m| m.status == MemberStatus::Idle).count()), theme::IDLE, theme::TEXT_PRIMARY),
+            (dnd,    format!("DO NOT DISTURB \u{2014} {}", members.iter().filter(|m| m.status == MemberStatus::Dnd).count()), theme::DND, theme::TEXT_PRIMARY),
+            (offline, format!("OFFLINE \u{2014} {}", members.iter().filter(|m| matches!(m.status, MemberStatus::Offline | MemberStatus::Unknown)).count()), theme::TEXT_MUTED, theme::TEXT_SECONDARY),
+        ] {
+            if group.is_empty() {
+                continue;
             }
-        }
-
-        // Offline group (includes Unknown)
-        if !offline.is_empty() {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
             }
-            let header = Line::from(Span::styled(
-                format!("OFFLINE \u{2014} {}", offline.len()),
-                Style::default().fg(theme::TEXT_MUTED),
-            ));
-            lines.push(header);
-            for member in &offline {
-                let dot = Span::styled("\u{25CF} ", Style::default().fg(theme::TEXT_MUTED));
-                let name = Span::styled(member.name.as_str(), Style::default().fg(theme::TEXT_SECONDARY));
+            lines.push(Line::from(Span::styled(header, Style::default().fg(theme::TEXT_MUTED))));
+            for member in &group {
+                let dot = Span::styled("\u{25CF} ", Style::default().fg(dot_color));
+                let name = Span::styled(member.name.clone(), Style::default().fg(name_color));
                 lines.push(Line::from(vec![dot, name]));
                 if let Some(cs) = &member.custom_status {
                     let status_text = match (&cs.emoji, &cs.text) {
