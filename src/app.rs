@@ -20,6 +20,7 @@ use crate::store::Store;
 use crate::tui::component::Component;
 use crate::tui::components::member_sidebar::MemberSidebar;
 use crate::tui::components::message_pane::MessagePane;
+use crate::tui::components::overlays::channel_info::ChannelInfoOverlay;
 use crate::tui::components::overlays::command_palette::CommandPalette;
 use crate::tui::components::overlays::emoji_picker::EmojiPicker;
 use crate::tui::components::overlays::pins::PinsOverlay;
@@ -46,6 +47,7 @@ pub struct App {
     search_overlay: SearchOverlay,
     pins_overlay: PinsOverlay,
     profile_overlay: ProfileOverlay,
+    channel_info_overlay: ChannelInfoOverlay,
     error_message: Option<(String, Instant)>,
     /// Tracks when typing indicators were last cleaned up.
     last_typing_cleanup: Instant,
@@ -75,6 +77,7 @@ impl App {
             search_overlay: SearchOverlay::new(),
             pins_overlay: PinsOverlay::new(),
             profile_overlay: ProfileOverlay::new(),
+            channel_info_overlay: ChannelInfoOverlay::new(),
             error_message: None,
             last_typing_cleanup: Instant::now(),
         }
@@ -141,6 +144,7 @@ impl App {
                 let pins_overlay_ref = &self.pins_overlay;
                 let search_overlay_ref = &self.search_overlay;
                 let profile_overlay_ref = &self.profile_overlay;
+                let channel_info_overlay_ref = &self.channel_info_overlay;
                 let error_ref = &self.error_message;
 
                 terminal.draw(|frame| {
@@ -231,6 +235,11 @@ impl App {
                     if profile_overlay_ref.is_visible() {
                         profile_overlay_ref.render(frame, area, &store);
                     }
+
+                    // Overlay: channel info
+                    if channel_info_overlay_ref.is_visible() {
+                        channel_info_overlay_ref.render(frame, area, &store);
+                    }
                 })?;
 
                 // Update the terminal window title with unread / mention counts.
@@ -316,6 +325,13 @@ impl App {
             if let Some(action) = result {
                 let _ = self.action_tx.send(action);
             }
+            return Ok(());
+        }
+
+        // When the channel info overlay is visible, route all keys to it.
+        if self.channel_info_overlay.is_visible() {
+            let mut store = self.store.write().unwrap();
+            self.channel_info_overlay.handle_key_event(key, &mut store)?;
             return Ok(());
         }
 
@@ -443,6 +459,28 @@ impl App {
                 }
                 _ => {}
             }
+        }
+
+        // 'i' in channel tree: open channel info popup
+        if key.code == KeyCode::Char('i')
+            && key.modifiers == KeyModifiers::NONE
+            && focus == FocusTarget::ChannelTree
+        {
+            let store = self.store.read().unwrap();
+            if let Some(channel_id) = store.ui.selected_channel {
+                if let Some(guild_id) = store.ui.selected_guild {
+                    if let Some(guild) = store.guilds.get_guild(guild_id) {
+                        if let Some(ch) = guild.channels.iter().find(|c| c.id == channel_id) {
+                            let name = ch.name.clone();
+                            let topic = ch.topic.clone();
+                            drop(store);
+                            self.channel_info_overlay.open(name, topic);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            return Ok(());
         }
 
         // Open search overlay with Ctrl+F.
