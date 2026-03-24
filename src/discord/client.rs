@@ -91,10 +91,38 @@ fn try_parse_ready_from_raw(json: &str) -> Option<DiscordEvent> {
                         })
                         .unwrap_or_default();
 
+                    // Parse members from the guild object
+                    let members: Vec<super::events::ReadyMember> = g
+                        .get("members")
+                        .and_then(|m| m.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|m| {
+                                    let user = m.get("user")?;
+                                    let uid: u64 = user.get("id")?.as_str()?.parse().ok()?;
+                                    let username = user.get("global_name")
+                                        .and_then(|n| n.as_str())
+                                        .or_else(|| user.get("username").and_then(|n| n.as_str()))
+                                        .unwrap_or("Unknown")
+                                        .to_string();
+                                    let nickname = m.get("nick")
+                                        .and_then(|n| n.as_str())
+                                        .map(|s| s.to_string());
+                                    Some(super::events::ReadyMember {
+                                        user_id: Id::new(uid),
+                                        username,
+                                        nickname,
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
                     Some(super::events::ReadyGuild {
                         id: Id::new(id),
                         name,
                         channels,
+                        members,
                     })
                 })
                 .collect()

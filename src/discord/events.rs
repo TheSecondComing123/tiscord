@@ -132,6 +132,15 @@ pub struct ReadyGuild {
     pub id: Id<GuildMarker>,
     pub name: String,
     pub channels: Vec<ReadyChannel>,
+    pub members: Vec<ReadyMember>,
+}
+
+/// Member data extracted from the user account Ready payload.
+#[derive(Debug, Clone)]
+pub struct ReadyMember {
+    pub user_id: Id<UserMarker>,
+    pub username: String,
+    pub nickname: Option<String>,
 }
 
 /// Channel data extracted from the user account Ready payload.
