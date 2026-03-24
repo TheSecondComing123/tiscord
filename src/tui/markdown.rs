@@ -150,6 +150,21 @@ pub fn parse(input: &str) -> Vec<Span<'_>> {
             }
         }
 
+        // ── underline  __...__ ───────────────────────────────────────────────
+        if bytes[i] == b'_' && i + 1 < len && bytes[i + 1] == b'_' {
+            if let Some(close) = find_str(input, "__", i + 2) {
+                flush_plain!(i);
+                let text = &input[i + 2..close];
+                spans.push(Span::styled(
+                    text,
+                    Style::default().add_modifier(Modifier::UNDERLINED),
+                ));
+                i = close + 2;
+                plain_start = i;
+                continue;
+            }
+        }
+
         // ── italic  _..._ ────────────────────────────────────────────────────
         if bytes[i] == b'_' {
             if let Some(close) = find_byte(bytes, b'_', i + 1) {
@@ -317,6 +332,34 @@ mod tests {
         let spans = parse("_italic_");
         assert_eq!(content(&spans), vec!["italic"]);
         assert!(spans[0].style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn underline_double_underscore() {
+        let spans = parse("__underline__");
+        assert_eq!(content(&spans), vec!["underline"]);
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn underline_does_not_apply_italic() {
+        let spans = parse("__underline__");
+        assert!(!spans[0].style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn underline_in_sentence() {
+        let spans = parse("hello __world__ there");
+        assert_eq!(content(&spans), vec!["hello ", "world", " there"]);
+        assert!(spans[1].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn single_underscore_still_italic() {
+        // Single underscore should still produce italic, not underline.
+        let spans = parse("_italic_");
+        assert!(spans[0].style.add_modifier.contains(Modifier::ITALIC));
+        assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
     }
 
     #[test]
